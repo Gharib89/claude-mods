@@ -30,7 +30,7 @@ test('compact_now compacts with its instructions at turn end, then submits resum
 
   const call = await $.tool.call({ tool: TOOL_ID, instructions: 'keep the migration plan', resume: 'Continue the migration at step 4' })
   // A plugin tool's own answer carries `result`, not `text` (2.1.288).
-  expect(call.result).toMatch(/Compaction queued \(context 42% full\)/)
+  expect(call.result).toMatch(/^Compaction queued\./)
   expect(compacted).toHaveLength(0)
 
   await $.turn.complete(TURN_END)
@@ -41,6 +41,25 @@ test('compact_now compacts with its instructions at turn end, then submits resum
   expect(compacted[0]).toMatch(/the current step and the next one/)
   expect(compacted[0]).not.toMatch(/issue number|run\.md/)
   expect(submitted).toEqual(['Continue the migration at step 4'])
+})
+
+// The window's percent and the auto-compact point's share differ (25% vs 81%): the result states neither, so it never
+// contradicts the reminder that asked for the call.
+test('compact_now reports no fill figure', async ($, on) => {
+  on('session.usage', (_, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        window: 1_000_000,
+        percent: 25,
+        tokens: 81_000,
+        ...(e.breakdown ? { breakdown: { autoCompactThreshold: 100_000 } as never } : {}),
+      },
+      rateLimits: [],
+    },
+  }))
+  const call = await $.tool.call({ tool: TOOL_ID, instructions: 'x', resume: 'y' })
+  expect(call.result).toBe('Compaction queued. End your turn now with a one-line status.')
 })
 
 test('a turn with no compact_now call compacts nothing', async ($, on) => {
