@@ -39,9 +39,10 @@ FULL_RUN='prek run --all-files'
 # prefix it sits under (an empty prefix is the repo root). Commands run in the
 # member's directory; <affected tests> takes {files}, relative to it, and an
 # empty one runs <tests>. An empty command is no check.
-TURN_ROWS=''
+# shellcheck disable=SC2016 # each row's own subshell expands $d
+TURN_ROWS='plugins/|mods|*.ts plugin.json hooks.json tsconfig.json|for d in */; do claude plugin validate "$d" && continue; exit; done|for d in */; do claude plugin test "$d" && continue; exit; done|'
 # Extra checks on `full` only, one per line: <name>|<command>, from the root.
-FULL_ROWS=''
+FULL_ROWS='marketplace|claude plugin validate .'
 # FULL_ROWS names the cloud cannot run (the profile's Local-only: parts),
 # space-separated: `skipped` unrun when CLAUDE_CODE_REMOTE=true.
 LOCAL_ONLY=''

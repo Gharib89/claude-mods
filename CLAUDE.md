@@ -17,7 +17,7 @@ A mod change is done when all four steps are **green** for `plugins/<name>`:
 3. `claude plugin test plugins/<name>`: the test answers every engine event the mod awaits (`session.usage`, `turn.complete`, `ui.toast`) itself.
 4. A live run shows the behaviour: `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`, or an interactive `claude --plugin-dir plugins/<name>` for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`). For a change to the marketplace entry, install from the checkout at local scope: `claude plugin marketplace add <checkout> --scope local` then `claude plugin install <name>@claude-mods --scope local`; the `Gharib89/claude-mods` form reads `main`.
 
-CI (`.github/workflows/mods.yml`) runs steps 1 to 3 on the pinned build. `scripts/check.sh` runs none of them yet: re-run `/setup-harness` to add them.
+CI (`.github/workflows/mods.yml`) runs steps 1 to 3 on the pinned build. `check.sh turn` and `full` run steps 1 and 3; `tsc` stays CI-only, since its types need a model turn.
 
 ## Plugin API authority
 
@@ -45,4 +45,4 @@ Every skill under `.claude/skills/` is a derived copy, changed at its source and
 
 ### Harness
 
-`scripts/check.sh` is this repo's check entry point: `edit <file>...` lints and formats, `turn` answers `skipped`, since this repo has no stack member, and `full` answers for the whole repo: the runner on every file. It prints one JSON line and exits 0 pass, 1 fail, 2 unavailable, 3 over budget. Hooks in `.claude/settings.json` run `edit` after every Edit or Write and `turn` at every stop, and the pre-commit runner is the commit rung. Harness profile: `docs/agents/harness.md`. Re-run `/setup-harness` after adding a stack, a member or a tool.
+`scripts/check.sh` is this repo's check entry point: `edit <file>...` lints and formats, `turn` validates and tests every mod under `plugins/`, and `full` answers for the whole repo: the runner on every file, the mod rows, and `claude plugin validate .`. It prints one JSON line and exits 0 pass, 1 fail, 2 unavailable, 3 over budget. Hooks in `.claude/settings.json` run `edit` after every Edit or Write and `turn` at every stop, and the pre-commit runner is the commit rung. Harness profile: `docs/agents/harness.md`. Re-run `/setup-harness` after adding a stack, a member or a tool.
