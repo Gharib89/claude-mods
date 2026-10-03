@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type TestBody } from 'claude-code/testing'
 
 const TOOL_ID = 'mcp__smart-compact__compact_now'
 const SUMMARY = { messages: [{ role: 'user' as const, text: 'summary', toolUses: [] }] }
@@ -171,4 +171,33 @@ test('an interactive session gets compact_now', async ($, on) => {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   expect(registered).toEqual(['compact_now'])
+})
+
+// The fill reads 85% before and after: a compaction that leaves the next result past 80% must ask again.
+const remindsAgainAfter = async ($: Parameters<TestBody>[0], on: On, compact: () => Promise<unknown>) => {
+  fillAt(on, 85_000)
+  on('ui.toast', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.compact', () => SUMMARY)
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  const step = async () => (await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []
+  expect(await step()).toEqual([expect.stringMatching(/very next step boundary/)])
+  await compact()
+  expect(await step()).toEqual([expect.stringMatching(/very next step boundary/)])
+}
+
+test('an automatic compaction re-arms the reminders', async ($, on) => {
+  await remindsAgainAfter($, on, () => $.session.compact({ trigger: 'auto', messages: SUMMARY.messages }))
+})
+
+test('a compact_now compaction re-arms the reminders', async ($, on) => {
+  const clock = mock.clock(on)
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  on('prompt.submit', (_, e, next) => next(e))
+  await remindsAgainAfter($, on, async () => {
+    await $.tool.call({ tool: TOOL_ID, instructions: 'keep the plan', resume: 'Continue at step 4' })
+    await $.turn.complete(TURN_END)
+    await clock.settle()
+  })
 })

@@ -1,6 +1,6 @@
 {
   "name": "smart-compact",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Lets Claude compact its own context at a step boundary it picks, with its own instructions, then resume the work.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" }
 }
