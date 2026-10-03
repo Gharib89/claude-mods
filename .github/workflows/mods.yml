@@ -12,7 +12,7 @@ permissions:
 jobs:
   check:
     # A fork's pull_request gets no secrets, so the types step could not authenticate: skip
-    # it rather than fail it, as claude-review.yml does.
+    # it rather than fail it.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:

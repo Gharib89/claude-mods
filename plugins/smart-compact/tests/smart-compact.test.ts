@@ -70,7 +70,7 @@ test('a call missing an input or with a blank resume is denied and queues nothin
     compactions++
     return SUMMARY
   })
-  for (const input of [{}, { instructions: 'x' }, { instructions: 'x', resume: '  ' }]) {
+  for (const input of [{}, { instructions: 'x' }, { resume: 'go' }, { instructions: 'x', resume: '  ' }]) {
     const call = await $.tool.call({ tool: TOOL_ID, ...input })
     expect(call.deny).toMatch(/needs both `instructions` and `resume`/)
   }
