@@ -58,7 +58,7 @@ Reads: None.
 In-PR requirement: None.
 Subject constraints: None.
 
-Issue #1 decides versioning when the first plugin lands.
+Each mod carries its own `version` in its `plugin.json`; no release tooling reads it yet.
 
 ## PR
 

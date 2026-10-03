@@ -1,6 +1,6 @@
 # claude-mods
 
-A marketplace of **mods**: Claude Code plugins made of function hooks, `register(on)` with each hook `($, e, next)`. Issue #1 specifies the first, `smart-compact`, and the repo scaffolding it brings.
+A marketplace of **mods**: Claude Code plugins made of function hooks, `register(on)` with each hook `($, e, next)`.
 
 ## Layout
 
@@ -15,9 +15,9 @@ A mod change is done when all four steps are **green** for `plugins/<name>`:
 1. `claude plugin validate plugins/<name>`: lists what the engine would refuse.
 2. `tsc -p plugins/<name>`: needs the generated `.claude-plugin/types/`, which appears once a session loads the mod (`--plugin-dir plugins/<name>`). It belongs to the running build, so keep it out of git.
 3. `claude plugin test plugins/<name>`: the test answers every engine event the mod awaits (`session.usage`, `turn.complete`, `ui.toast`) itself.
-4. A live run shows the behaviour: `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`; for a change to the marketplace entry, install it with `claude plugin marketplace add Gharib89/claude-mods` then `claude plugin install <name>@claude-mods`.
+4. A live run shows the behaviour: `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`, or an interactive `claude --plugin-dir plugins/<name>` for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`). For a change to the marketplace entry, install from the checkout at local scope: `claude plugin marketplace add <checkout> --scope local` then `claude plugin install <name>@claude-mods --scope local`; the `Gharib89/claude-mods` form reads `main`.
 
-`scripts/check.sh` runs none of these yet: re-run `/setup-harness` when the first mod lands.
+CI (`.github/workflows/mods.yml`) runs steps 1 to 3 on the pinned build. `scripts/check.sh` runs none of them yet: re-run `/setup-harness` to add them.
 
 ## Plugin API authority
 

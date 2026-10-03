@@ -1,0 +1,15 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "Ahmed Gharib",
+    "url": "https://github.com/Gharib89"
+  },
+  "description": "Mods for Claude Code: plugins of function hooks that change how long work runs.",
+  "plugins": [
+    {
+      "name": "smart-compact",
+      "source": "./plugins/smart-compact",
+      "description": "Lets Claude compact its own context at a step boundary it picks, with its own instructions, then resume the work."
+    }
+  ]
+}
