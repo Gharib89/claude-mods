@@ -124,3 +124,51 @@ test('reminds once at 60% and once at 80% of the auto-compact point, again after
   expect(await step(62_000)).toHaveLength(1)
   expect(toasts).toHaveLength(3)
 })
+
+// The fill the last response reported, against an auto-compact point of 100K.
+const fillAt = (on: On, tokens: number) =>
+  on('session.usage', (_, e) => ({
+    value: {
+      startedAt: 0,
+      context: {
+        window: 1_000_000,
+        tokens,
+        ...(e.breakdown ? { breakdown: { autoCompactThreshold: 100_000 } as never } : {}),
+      },
+      rateLimits: [],
+    },
+  }))
+
+test('a reminder counts the tool result it rides on', async ($, on) => {
+  fillAt(on, 50_000)
+  on('ui.toast', () => ({ value: undefined }))
+  // The last response's fill excludes this result: 33K characters lift 50% past 60% (Claude Code 2.1.288).
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok', text: 'x'.repeat(33_000) }))
+  const call = await $.tool.call({ tool: 'Read', file_path: 'big.md' })
+  expect(call.context ?? []).toEqual([expect.stringMatching(/61% of the auto-compact point/)])
+})
+
+test('a headless session gets no compact_now and no reminders', async ($, on) => {
+  fillAt(on, 85_000)
+  const registered: string[] = []
+  on('tool.register', (_, e) => {
+    registered.push(e.name)
+    return { value: { tool: `mcp__smart-compact__${e.name}` } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  expect(registered).toEqual([])
+  expect((await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []).toEqual([])
+})
+
+test('an interactive session gets compact_now', async ($, on) => {
+  const registered: string[] = []
+  on('tool.register', (_, e) => {
+    registered.push(e.name)
+    return { value: { tool: `mcp__smart-compact__${e.name}` } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  expect(registered).toEqual(['compact_now'])
+})
