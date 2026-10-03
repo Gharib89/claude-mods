@@ -71,7 +71,8 @@ export const register: Register = on => {
       return { deny: 'compact_now compacts the main conversation only, so a subagent has no use for it; carry on with your task.' }
     }
     // The engine does not hold a plugin tool's input to its schema's `required` (2.1.288): a model calling the
-    // deferred tool before loading its schema sends `{}`, and a compaction with no resume stalls the work.
+    // deferred tool before loading its schema sends `{}`, and a compaction with no resume stalls the work. An empty
+    // `instructions` is fine: withKeep still sends KEEP.
     const { instructions, resume } = e as unknown as Record<string, unknown>
     if (typeof instructions !== 'string' || typeof resume !== 'string' || resume.trim() === '') {
       return {

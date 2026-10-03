@@ -1,6 +1,6 @@
 name: Mods
 
-# The mod dev loop from CLAUDE.md, steps 1 to 3: tsc, validate, test.
+# The mod dev loop from CLAUDE.md, steps 1 to 3: validate, tsc, test.
 on:
   pull_request:
   push:
