@@ -60,6 +60,21 @@ test('a subagent cannot queue a compaction', async ($, on) => {
   expect(call.deny).toMatch(/main conversation only/)
 })
 
+test('a call without both inputs is denied and queues nothing', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on)
+  let compactions = 0
+  on('session.compact', () => {
+    compactions++
+    return SUMMARY
+  })
+  const call = await $.tool.call({ tool: TOOL })
+  expect(call.deny).toMatch(/needs both `instructions` and `resume`/)
+  await $.turn.complete(TURN_END)
+  await clock.settle()
+  expect(compactions).toBe(0)
+})
+
 test('a threshold compaction gets the keep-list', async ($, on) => {
   let seen: string | undefined
   on('session.compact', (_, e) => {

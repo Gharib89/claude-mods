@@ -67,7 +67,14 @@ export const register: Register = on => {
 
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
     if (e.agentId !== undefined) return { deny: 'compact_now compacts the main conversation only; call it from the main loop.' }
-    const { instructions, resume } = e as unknown as Pending
+    // The engine does not hold a plugin tool's input to its schema's `required` (2.1.288): a model calling the
+    // deferred tool before loading its schema sends `{}`, and a compaction with no resume stalls the work.
+    const { instructions, resume } = e as unknown as Partial<Pending>
+    if (typeof instructions !== 'string' || typeof resume !== 'string' || resume.trim() === '') {
+      return {
+        deny: 'compact_now needs both `instructions` and `resume` as strings; nothing was queued. Call it again with `instructions` (what the summary must keep for this work) and `resume` (the self-contained prompt that restarts the work at the next step).',
+      }
+    }
     pending = { instructions, resume }
     const { context } = await $.session.usage()
     return {
