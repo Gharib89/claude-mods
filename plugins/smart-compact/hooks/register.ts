@@ -71,7 +71,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('tool.call', { tool: TOOL_ID }, async ($, e) => {
+  on('tool.call', { tool: TOOL_ID }, (_, e) => {
     if (e.agentId !== undefined) {
       return { deny: 'compact_now compacts the main conversation only, so a subagent has no use for it; carry on with your task.' }
     }
@@ -85,10 +85,7 @@ export const register: Register = on => {
       }
     }
     pending = { instructions, resume }
-    const { context } = await $.session.usage()
-    return {
-      result: `Compaction queued (context ${context.percent ?? '?'}% full). End your turn now with a one-line status.`,
-    }
+    return { result: 'Compaction queued. End your turn now with a one-line status.' }
   })
 
   // Every main-loop tool result: how full the context is against the auto-compact point, not the model's window.
