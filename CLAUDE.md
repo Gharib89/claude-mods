@@ -1,27 +1,27 @@
 # claude-mods
 
-A Claude Code plugin marketplace of mods: plugins made of function hooks (`register(on)`, each hook `($, e, next)`), not skills or shell hooks. The first mod, `smart-compact`, is specified in issue #1; `plugins/` does not exist until that lands.
+A marketplace of **mods**: Claude Code plugins made of function hooks, `register(on)` with each hook `($, e, next)`. Issue #1 specifies the first, `smart-compact`, and the repo scaffolding it brings.
 
 ## Layout
 
-- `.claude-plugin/marketplace.json` at the root: marketplace `claude-mods`, one entry per mod with `"source": "./plugins/<name>"`.
-- `plugins/<name>/`: one mod. `.claude-plugin/plugin.json`, `hooks/hooks.json` (`{ "modules": ["./register.ts"] }`), `hooks/register.ts`, `tests/*.test.ts`, and a `tsconfig.json` that extends `./.claude-plugin/types/tsconfig.json`.
-- Every mod is standalone and generic: its code names no skill (`/ship` or any other) and needs nothing outside its own folder.
-
-Users install with `claude plugin marketplace add Gharib89/claude-mods`, then `claude plugin install <name>@claude-mods`.
+- `.claude-plugin/marketplace.json`: marketplace `claude-mods`, one entry per mod, sourced from `./plugins/<name>`.
+- `plugins/<name>/`: one mod, self-contained. Its `tsconfig.json` extends `./.claude-plugin/types/tsconfig.json`, which the engine generates (see the dev loop).
+- Every mod is **generic**: it serves any long task, so its code and messages speak of tasks, steps and run files, and it reads only its own folder.
 
 ## Mod dev loop
 
-For a mod at `plugins/<name>`, from the repo root:
+A mod change is done when all four steps are **green** for `plugins/<name>`:
 
-1. `claude plugin validate plugins/<name>`: reads the manifest and module the way the engine will and lists what it would refuse.
-2. `tsc -p plugins/<name>`: needs `plugins/<name>/.claude-plugin/types/`, which the engine writes when it loads the mod (any session started with `--plugin-dir plugins/<name>`). It is generated for the running build, so never commit it.
-3. `claude plugin test plugins/<name>`: runs the mod's `*.test.ts` with the `claude-code/testing` kit. A test answers every engine event the mod awaits (`session.usage`, `turn.complete`, `ui.toast`) itself.
-4. Live run: `claude --plugin-dir plugins/<name>`, or headless `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`.
+1. `claude plugin validate plugins/<name>`: lists what the engine would refuse.
+2. `tsc -p plugins/<name>`: needs the generated `.claude-plugin/types/`, which appears once a session loads the mod (`--plugin-dir plugins/<name>`). It belongs to the running build, so keep it out of git.
+3. `claude plugin test plugins/<name>`: the test answers every engine event the mod awaits (`session.usage`, `turn.complete`, `ui.toast`) itself.
+4. A live run shows the behaviour: `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`; for a change to the marketplace entry, install it with `claude plugin marketplace add Gharib89/claude-mods` then `claude plugin install <name>@claude-mods`.
+
+`scripts/check.sh` runs none of these yet: re-run `/setup-harness` when the first mod lands.
 
 ## Plugin API authority
 
-The plugin API is early access and changes between Claude Code builds. Its authority is the types file the engine writes for the running build: `plugins/<name>/.claude-plugin/types/claude-code/index.d.ts` once the mod has loaded, or the file the bundled `plugin-authoring` skill names when it loads. Grep it for the event or method (`'tool.call'`, `compact(`) and read the declaration; take API facts from there, not from memory or a web search. Load `plugin-authoring` for the `($, e, next)` contract and worked examples. An API behaviour a mod relies on that the types do not state (an ordering, a refusal) goes in a code comment beside the call, with the build it was seen on; issue #1 lists the ones `smart-compact` found on 2.1.288.
+The plugin API is early access and shifts between Claude Code builds, so the **authority** is the types file the running build writes: `plugins/<name>/.claude-plugin/types/claude-code/index.d.ts`, or before any mod has loaded, the file the bundled `plugin-authoring` skill names. Grep it for the event or method and read the declaration. Load `plugin-authoring` for the hook contract and examples. A behaviour a mod relies on that the types leave unstated (an ordering, a refusal) gets a code comment beside the call naming the build it was seen on.
 
 ## Agent skills
 
