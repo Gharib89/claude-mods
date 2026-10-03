@@ -83,6 +83,7 @@ fi
 
 # The repo's Ship-only gates go here: checks relative to "$base", and
 # `mark <CI leg> deferred-to-ci` for what only CI can prove.
+mark tsc deferred-to-ci  # tsc runs only in CI (mods.yml check leg)
 # --- end gates -----------------------------------------------------------------
 
 # A name both report keeps the worse status, so neither side can mask a failure.

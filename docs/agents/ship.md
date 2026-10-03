@@ -23,11 +23,11 @@ The gate runs `scripts/check.sh full` from the harness, plus `secrets` (gitleaks
 
 ## CI
 
-Legs: None.
-No-checks legal: yes, the repo has no PR workflow, so a PR reports no checks ever.
+Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace and the mod, tsc, test) on Claude Code 2.1.288
+No-checks legal: no, `mods.yml` runs on every PR with no `paths:` filter, so a PR with no checks means CI never started.
 Push policy: Default.
 
-`.github/workflows/claude-review.yml` is the Claude reviewer, triggered by `issue_comment`. It lands no check run on the PR head, so it is not a leg.
+`.github/workflows/mods.yml` also runs on push to `main`. `.github/workflows/claude-review.yml` is the Claude reviewer, triggered by `issue_comment`. It lands no check run on the PR head, so it is not a leg.
 
 ## Reviewers
 
