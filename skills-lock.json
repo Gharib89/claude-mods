@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "skills": {
+    "cloud-ship": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/cloud-ship/SKILL.md",
+      "computedHash": "0232ac44431478351146f8a75b1a0180fca0bc48d41fac5afe07e7784c07fd4e"
+    },
+    "code-review": {
+      "source": "mattpocock/skills",
+      "ref": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/code-review/SKILL.md",
+      "computedHash": "caa9a086baaf9e0f7cd71f64edfa83da6821c05e826b083221f3d02e3d6a1905"
+    },
+    "find-docs": {
+      "source": "upstash/context7",
+      "ref": "e275a848a420e0d11c2822f61201ee005bfd1133",
+      "sourceType": "github",
+      "skillPath": "skills/find-docs/SKILL.md",
+      "computedHash": "93ec2d2786d7e83973252383875c4f345a2ee7cbbd08a1ab38e5201b214640ee"
+    },
+    "setup-harness": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/setup-harness/SKILL.md",
+      "computedHash": "29f5e9c5391b52c20a179e6beafc8e36812f74d1a623ee2edb54d362215ea90b"
+    },
+    "setup-skills": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/setup-skills/SKILL.md",
+      "computedHash": "e7e811e26a0c3b8ec3fe9447b80a7db66ccc50c3c905cccef7359024b8cad5c0"
+    },
+    "ship": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/ship/SKILL.md",
+      "computedHash": "28608ba70767e050d252d1ed169dd139a89c78f926fdffa23a222191d6a9e36a"
+    },
+    "show-me": {
+      "source": "humanlayer/skills",
+      "ref": "ca7c8088db69e315a8b2deea43820270457f8f3c",
+      "sourceType": "github",
+      "skillPath": "plugins/show-me/skills/show-me/SKILL.md",
+      "computedHash": "43766f53afe7eb9feba0bb7716590c35cbb8d39d4a91eddef50e9566a6f6ae19"
+    },
+    "tdd": {
+      "source": "mattpocock/skills",
+      "ref": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/tdd/SKILL.md",
+      "computedHash": "9ce12c4a1e209e557fcf9d02086ade3d7ffdb976186018fc1b063b4164246004"
+    },
+    "triage": {
+      "source": "mattpocock/skills",
+      "ref": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/triage/SKILL.md",
+      "computedHash": "a683e69163e23630f39c05a50fb9d83a3795a6a6fbd317357669e082cd43a158"
+    },
+    "update-skills": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/update-skills/SKILL.md",
+      "computedHash": "f861bae8ddcd5b40364427fb14d6de0d08f43fe9dda15795c624a631588c8136"
+    },
+    "writing-for-agents": {
+      "source": "mattpocock/skills",
+      "ref": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/writing-for-agents/SKILL.md",
+      "computedHash": "95da47fc97af998e85b7d7e6d57b3ac76727c1e290cfe9ea09005aacb826959f"
+    }
+  }
+}
