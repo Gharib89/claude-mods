@@ -36,8 +36,13 @@ export const register: Register = on => {
   // The highest level already said; back to 0 once the context drops below the lowest (after a compaction).
   let warned = 0
   let compactAt: number | undefined
+  // $.session.compact rejects in a -p or SDK session (Claude Code 2.1.288), so there the mod offers no tool and
+  // asks for none; the keep-list still rides every compaction.
+  let headless = false
 
   on('session.start', async ($, e, next) => {
+    headless = !e.isInteractive
+    if (headless) return next(e)
     await $.tool.register({
       name: TOOL,
       description: [
@@ -89,7 +94,7 @@ export const register: Register = on => {
   // Every main-loop tool result: how full the context is against the auto-compact point, not the model's window.
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
-    if (e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
+    if (headless || e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
     // context.percent is against the model's window (1M on Opus 5.5); the breakdown carries the auto-compact
     // point, cached until a compaction that reaches the session.compact hook below (seen on Claude Code 2.1.288).
     if (compactAt === undefined) {
@@ -98,7 +103,9 @@ export const register: Register = on => {
     }
     const { tokens } = (await $.session.usage()).context
     if (tokens === undefined) return ran
-    const pct = Math.round((100 * tokens) / compactAt)
+    // tokens is the last response's input, which excludes this result; Claude's next step reads it too. A third of
+    // its characters: the usual quarter ran 35% short on a dense file (16.4K tokens from 43.7K characters, 2.1.288).
+    const pct = Math.round((100 * (tokens + (ran.text?.length ?? 0) / 3)) / compactAt)
     const level = LEVELS.find(l => pct >= l.at)
     if (level === undefined) {
       warned = 0
