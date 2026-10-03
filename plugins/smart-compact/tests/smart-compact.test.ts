@@ -1,11 +1,11 @@
 import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 
-const TOOL = 'mcp__smart-compact__compact_now'
+const TOOL_ID = 'mcp__smart-compact__compact_now'
 const SUMMARY = { messages: [{ role: 'user' as const, text: 'summary', toolUses: [] }] }
 const TURN_END = { answer: 'queued', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' } as const
 
-// The engine's own answers to the events the mod raises or awaits.
+// The engine's own answers to the events the mod raises or awaits: a test answers them itself (Claude Code 2.1.288).
 const engine = (on: On) => {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000, percent: 42 }, rateLimits: [] } }))
   on('turn.complete', (_, e) => ({ text: e.answer }))
@@ -28,7 +28,8 @@ test('compact_now compacts with its instructions at turn end, then submits resum
     return next(e)
   })
 
-  const call = await $.tool.call({ tool: TOOL, instructions: 'keep the migration plan', resume: 'Continue the migration at step 4' })
+  const call = await $.tool.call({ tool: TOOL_ID, instructions: 'keep the migration plan', resume: 'Continue the migration at step 4' })
+  // A plugin tool's own answer carries `result`, not `text` (2.1.288).
   expect(call.result).toMatch(/Compaction queued \(context 42% full\)/)
   expect(compacted).toHaveLength(0)
 
@@ -37,7 +38,7 @@ test('compact_now compacts with its instructions at turn end, then submits resum
 
   expect(compacted).toHaveLength(1)
   expect(compacted[0]).toMatch(/^keep the migration plan/)
-  expect(compacted[0]).toMatch(/run-record file/)
+  expect(compacted[0]).toMatch(/run file/)
   expect(submitted).toEqual(['Continue the migration at step 4'])
 })
 
@@ -56,7 +57,7 @@ test('a turn with no compact_now call compacts nothing', async ($, on) => {
 
 test('a subagent cannot queue a compaction', async ($, on) => {
   engine(on)
-  const call = await $.tool.call({ tool: TOOL, agentId: 'sub-1', instructions: 'x', resume: 'y' })
+  const call = await $.tool.call({ tool: TOOL_ID, agentId: 'sub-1', instructions: 'x', resume: 'y' })
   expect(call.deny).toMatch(/main conversation only/)
 })
 
@@ -68,7 +69,7 @@ test('a call without both inputs is denied and queues nothing', async ($, on) =>
     compactions++
     return SUMMARY
   })
-  const call = await $.tool.call({ tool: TOOL })
+  const call = await $.tool.call({ tool: TOOL_ID })
   expect(call.deny).toMatch(/needs both `instructions` and `resume`/)
   await $.turn.complete(TURN_END)
   await clock.settle()
@@ -82,7 +83,7 @@ test('a threshold compaction gets the keep-list', async ($, on) => {
     return SUMMARY
   })
   await $.session.compact({ trigger: 'auto', messages: SUMMARY.messages })
-  expect(seen).toMatch(/run-record file/)
+  expect(seen).toMatch(/run file/)
 })
 
 test('reminds once at 60% and once at 80% of the auto-compact point, again after a drop', async ($, on) => {

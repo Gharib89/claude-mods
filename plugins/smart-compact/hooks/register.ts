@@ -1,14 +1,14 @@
 import type { Register } from 'claude-code'
 
 const TOOL = 'compact_now'
-const TOOL_ID = 'mcp__smart-compact__compact_now'
+const TOOL_ID = `mcp__smart-compact__${TOOL}`
 
 // Every compaction, the threshold's included, keeps what long work needs to resume.
 const KEEP = [
   'The summary must keep, verbatim, whatever of these the work has: the task and its goal;',
   'the plan and which steps are done; the current step and the next one; the branch, worktree and PR;',
   'every file being changed; decisions and open findings not yet written down;',
-  'and the path of any progress or run-record file the work keeps.',
+  'and the path of any run file or progress file the work keeps.',
 ].join(' ')
 
 type Pending = { instructions: string; resume: string }
@@ -20,7 +20,7 @@ const LEVELS = [
   {
     at: 80,
     say: (pct: number) =>
-      `smart-compact: context is at ${pct}% of the auto-compact point, so auto-compaction will soon cut in mid-step. Call compact_now at the very next step boundary.`,
+      `smart-compact: context is at ${pct}% of the auto-compact point, so auto-compaction will soon cut in mid-step. Finish the step in progress; at the very next step boundary, before starting anything new, call compact_now with \`instructions\` and \`resume\`, then end your turn.`,
   },
   {
     at: 60,
@@ -30,7 +30,8 @@ const LEVELS = [
 ] as const
 
 export const register: Register = on => {
-  // A module variable: a reload between the tool call and the turn's end drops the request, which is harmless.
+  // A module variable: a reload between the tool call and the turn's end drops the request, and the work then
+  // waits for the next prompt.
   let pending: Pending | undefined
   // The highest level already said; back to 0 once the context drops below the lowest (after a compaction).
   let warned = 0
@@ -43,7 +44,7 @@ export const register: Register = on => {
         'Compact your own context at a step boundary you choose, then resume on your own.',
         'Call it between the steps of long work (after a check passes, before the next step starts), so the summary lands on finished work.',
         'Reminders arrive as the context fills: at 60% of the auto-compact point a heads-up, at 80% a request to call this at the very next step boundary.',
-        'After the call, end your turn with a one-line status: compaction runs when the turn ends, then `resume` is submitted as the next prompt.',
+        'After the call, end your turn: compaction runs when the turn ends, then `resume` is submitted as the next prompt.',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -51,7 +52,7 @@ export const register: Register = on => {
           instructions: {
             type: 'string',
             description:
-              'What this summary must keep beyond the general keep-list: the names, numbers, paths and open decisions the next step needs.',
+              'What this summary must keep for the next step: the names, numbers, paths and open decisions this work depends on. The task, plan, step status, branch, PR, changed files and run file are kept already.',
           },
           resume: {
             type: 'string',
@@ -66,13 +67,15 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: TOOL_ID }, async ($, e) => {
-    if (e.agentId !== undefined) return { deny: 'compact_now compacts the main conversation only; call it from the main loop.' }
+    if (e.agentId !== undefined) {
+      return { deny: 'compact_now compacts the main conversation only, so a subagent has no use for it; carry on with your task.' }
+    }
     // The engine does not hold a plugin tool's input to its schema's `required` (2.1.288): a model calling the
     // deferred tool before loading its schema sends `{}`, and a compaction with no resume stalls the work.
-    const { instructions, resume } = e as unknown as Partial<Pending>
+    const { instructions, resume } = e as unknown as Record<string, unknown>
     if (typeof instructions !== 'string' || typeof resume !== 'string' || resume.trim() === '') {
       return {
-        deny: 'compact_now needs both `instructions` and `resume` as strings; nothing was queued. Call it again with `instructions` (what the summary must keep for this work) and `resume` (the self-contained prompt that restarts the work at the next step).',
+        deny: 'compact_now needs both `instructions` and `resume`, with `resume` non-empty; nothing was queued. Call it again with `instructions` (what the summary must keep for this work) and `resume` (the self-contained prompt that restarts the work at the next step).',
       }
     }
     pending = { instructions, resume }
@@ -87,7 +90,7 @@ export const register: Register = on => {
     const ran = await next(e)
     if (e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
     // context.percent is against the model's window (1M on Opus 5.5); the breakdown carries the auto-compact
-    // point, cached until the next compaction (seen on Claude Code 2.1.288).
+    // point, cached until a compaction that reaches the session.compact hook below (seen on Claude Code 2.1.288).
     if (compactAt === undefined) {
       const { context } = await $.session.usage({ breakdown: 'summary' })
       compactAt = context.breakdown?.autoCompactThreshold ?? context.window

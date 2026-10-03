@@ -1,6 +1,6 @@
 # claude-mods
 
-A marketplace of **mods**: Claude Code plugins made of function hooks, `register(on)` with each hook `($, e, next)`. The first is `smart-compact`.
+A marketplace of **mods**: Claude Code plugins made of function hooks, `register(on)` with each hook `($, e, next)`.
 
 ## Layout
 
