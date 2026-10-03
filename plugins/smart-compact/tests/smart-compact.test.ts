@@ -39,7 +39,7 @@ test('compact_now compacts with its instructions at turn end, then submits resum
   expect(compacted).toHaveLength(1)
   expect(compacted[0]).toMatch(/^keep the migration plan/)
   expect(compacted[0]).toMatch(/the current step and the next one/)
-  expect(compacted[0]).not.toMatch(/ship/i)
+  expect(compacted[0]).not.toMatch(/issue number|run\.md/)
   expect(submitted).toEqual(['Continue the migration at step 4'])
 })
 
@@ -87,7 +87,7 @@ test('a threshold compaction gets the keep-list', async ($, on) => {
   })
   await $.session.compact({ trigger: 'auto', messages: SUMMARY.messages })
   expect(seen).toMatch(/decisions and open findings not yet written down/)
-  expect(seen).not.toMatch(/ship/i)
+  expect(seen).not.toMatch(/issue number|run\.md/)
 })
 
 test('reminds once at 60% and once at 80% of the auto-compact point, again after a drop', async ($, on) => {

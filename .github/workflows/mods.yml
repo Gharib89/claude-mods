@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   check:
+    # A fork's pull_request gets no secrets, so the types step could not authenticate: skip
+    # it rather than fail it, as claude-review.yml does.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
       MOD: plugins/smart-compact
@@ -25,6 +28,11 @@ jobs:
       - name: Install Claude Code 2.1.288 and TypeScript
         run: npm install -g @anthropic-ai/claude-code@2.1.288 typescript@7.0.2 # zizmor: ignore[adhoc-packages]
 
+      - name: Validate the marketplace and the mod
+        run: |
+          claude plugin validate .
+          claude plugin validate "$MOD"
+
       # The engine writes a mod's types when a session loads it. `validate` and
       # `test` do not, so one headless turn does (seen on 2.1.288).
       - name: Generate the plugin types
@@ -34,11 +42,6 @@ jobs:
 
       - name: tsc
         run: tsc -p "$MOD"
-
-      - name: Validate the marketplace and the mod
-        run: |
-          claude plugin validate .
-          claude plugin validate "$MOD"
 
       - name: Test
         run: claude plugin test "$MOD"
