@@ -6,9 +6,24 @@ repos:
         name: prettier
         entry: prettier --write --ignore-unknown
         language: system
-        types_or: [markdown]
+        files: (\.(md|markdown)$|^\.github/workflows/[^/]+\.ya?ml$)
       - id: markdownlint-cli2
         name: markdownlint-cli2
         entry: markdownlint-cli2 --fix
         language: system
         types_or: [markdown]
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        types: [shell]
+      - id: actionlint
+        name: actionlint
+        entry: actionlint -pyflakes=
+        language: system
+        files: ^\.github/workflows/[^/]+\.ya?ml$
+      - id: zizmor
+        name: zizmor
+        entry: zizmor --offline --fix
+        language: system
+        files: ^\.github/workflows/[^/]+\.ya?ml$

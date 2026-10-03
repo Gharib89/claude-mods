@@ -29,7 +29,7 @@ shopt -u patsub_replacement 2>/dev/null || :
 # >>> setup-harness configuration
 # Files the edit rung covers, as shell globs on the file name; any other file
 # is `skipped`.
-EDIT_GLOBS='*.md *.markdown'
+EDIT_GLOBS='*.md *.markdown *.sh *.bash *.yml *.yaml'
 # The runner on a file list ({files}), and on every file for `full`.
 EDIT_RUN='prek run --files {files}'
 FULL_RUN='prek run --all-files'

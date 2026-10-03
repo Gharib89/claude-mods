@@ -41,4 +41,4 @@ Local-only: None.
 
 ## Declined
 
-Declined: None.
+Declined: shfmt: no local Go toolchain, and its default style would rewrite the template-derived scripts
