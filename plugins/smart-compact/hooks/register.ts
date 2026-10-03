@@ -33,7 +33,7 @@ export const register: Register = on => {
   // A module variable: a reload between the tool call and the turn's end drops the request, and the work then
   // waits for the next prompt.
   let pending: Pending | undefined
-  // The highest level already said; back to 0 once the context drops below the lowest (after a compaction).
+  // The highest level already said; back to 0 after every compaction, and once the context drops below the lowest.
   let warned = 0
   let compactAt: number | undefined
   // $.session.compact rejects in a -p or SDK session (Claude Code 2.1.288), so there the mod offers no tool and
@@ -134,6 +134,7 @@ export const register: Register = on => {
           $.ui.toast(`smart-compact: compaction skipped (${compacted.skip}); not resuming`)
           return
         }
+        warned = 0
         // Without asUser the prompt shows as "The smart-compact plugin sent a message", which is honest (2.1.288).
         await $.prompt.submit({ text: request.resume })
       })().catch(err => $.ui.toast(`smart-compact: ${String(err)}`))
@@ -142,9 +143,10 @@ export const register: Register = on => {
   })
 
   // A plugin's own $.session.compact skips its own session.compact hook (Claude Code 2.1.288), so the queued path
-  // above adds KEEP itself.
+  // above adds KEEP and re-arms the reminders itself.
   on('session.compact', ($, e, next) => {
     compactAt = undefined
+    warned = 0
     return next({ ...e, instructions: withKeep(e.instructions) })
   })
 }
