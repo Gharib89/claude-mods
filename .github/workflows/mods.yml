@@ -15,8 +15,6 @@ jobs:
     # it rather than fail it.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    env:
-      MOD: plugins/smart-compact
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,20 +26,23 @@ jobs:
       - name: Install Claude Code 2.1.288 and TypeScript
         run: npm install -g @anthropic-ai/claude-code@2.1.288 typescript@7.0.2 # zizmor: ignore[adhoc-packages]
 
-      - name: Validate the marketplace and the mod
+      - name: Validate the marketplace and the mods
         run: |
           claude plugin validate .
-          claude plugin validate "$MOD"
+          for mod in plugins/*/; do claude plugin validate "$mod"; done
 
       # The engine writes a mod's types when a session loads it. `validate` and
       # `test` do not, so one headless turn does (seen on 2.1.288).
       - name: Generate the plugin types
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        run: claude -p "reply ok" --model haiku --plugin-dir "$MOD" < /dev/null
+        run: |
+          dirs=()
+          for mod in plugins/*/; do dirs+=(--plugin-dir "$mod"); done
+          claude -p "reply ok" --model haiku "${dirs[@]}" < /dev/null
 
       - name: tsc
-        run: tsc -p "$MOD"
+        run: for mod in plugins/*/; do tsc -p "$mod"; done
 
       - name: Test
-        run: claude plugin test "$MOD"
+        run: for mod in plugins/*/; do claude plugin test "$mod"; done

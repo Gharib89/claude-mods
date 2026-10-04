@@ -1,0 +1,18 @@
+{
+  "name": "gh-pane",
+  "version": "0.1.0",
+  "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command.",
+  "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "needsTriageLabel": { "type": "string", "title": "Needs-triage label", "description": "The label on an issue waiting for triage.", "default": "needs-triage" },
+    "needsInfoLabel": { "type": "string", "title": "Needs-info label", "description": "The label on an issue waiting for its reporter.", "default": "needs-info" },
+    "readyForAgentLabel": { "type": "string", "title": "Ready-for-agent label", "description": "The label on an issue an agent may ship now.", "default": "ready-for-agent" },
+    "readyForHumanLabel": { "type": "string", "title": "Ready-for-human label", "description": "The label on an issue that needs a person.", "default": "ready-for-human" },
+    "prCap": { "type": "number", "title": "PR cap", "description": "How many open PRs the header counts against.", "default": 3 },
+    "worktreeLayout": { "type": "string", "title": "Ship worktree layout", "description": "Where a ship run isolates issue {n}, relative to the main checkout's parent folder: {repo} is the main checkout's folder name, {slug} any one path segment.", "default": "{repo}.worktrees/{slug}-{n}" },
+    "shipCommand": { "type": "string", "title": "Ship command", "description": "What a ready issue's ship button fills; {n} is the issue number.", "default": "/ship {n}" },
+    "triageCommand": { "type": "string", "title": "Triage command", "description": "What triage and triage all fill; {issues} is one number (12) or a list (#12, #13 one by one).", "default": "/triage {issues}" },
+    "releaseRequest": { "type": "string", "title": "Release request", "description": "What a stale claim's release button fills; {n} is the issue number, {user} its assignees.", "default": "Release the ship claim on #{n}: unassign {user} and comment that the claim went stale with no PR." }
+  }
+}

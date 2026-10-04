@@ -10,6 +10,11 @@
       "name": "smart-compact",
       "source": "./plugins/smart-compact",
       "description": "Lets Claude compact its own context at a step boundary it picks, with its own instructions, then resume the work."
+    },
+    {
+      "name": "gh-pane",
+      "source": "./plugins/gh-pane",
+      "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command."
     }
   ]
 }
