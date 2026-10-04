@@ -9,8 +9,8 @@ export type Issue = {
   assignees: string[]
   /** Its open sub-issues in this repo, in the parent's order. */
   children: number[]
-  /** How many of its sub-issues are closed. */
-  done: number
+  /** Its sub-issues, all of them and the closed ones (GitHub's `sub_issues_summary`). */
+  subs: { total: number; done: number }
   /** The open issue it is a sub-issue of. */
   parent?: number
   /** Its open blockers. */
