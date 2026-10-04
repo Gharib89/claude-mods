@@ -7,6 +7,24 @@ released version. See
 
 <!-- version list -->
 
+## v0.16.4 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: The merge gate closes phase 9 in both lanes
+  ([#466](https://github.com/Gharib89/skills/pull/466),
+  [`054e04a`](https://github.com/Gharib89/skills/commit/054e04a9e4ee52f45aabd382c04661ddcd962146))
+
+
+## v0.16.3 (2026-10-03)
+
+### Bug Fixes
+
+- **ship**: Read-pr carries the PR's draft flag on both hosts
+  ([#460](https://github.com/Gharib89/skills/pull/460),
+  [`9a57b5c`](https://github.com/Gharib89/skills/commit/9a57b5c2d50f0ec34d4a57aa0f58713d3fe6d40f))
+
+
 ## v0.16.2 (2026-10-03)
 
 ### Bug Fixes

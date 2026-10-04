@@ -4,8 +4,8 @@
 #
 #   read-pr <pr>
 #
-# stdout: {number, url, title, body, head_sha, head_ref, base_ref, state,
-#          mergeable}
+# stdout: {number, url, title, body, head_sha, head_ref, base_ref, draft,
+#          state, mergeable}
 #   The adapter's PR object unchanged: the same fields on both hosts. Comments,
 #   review threads and checks come from poll-pr.
 # exit: 0 · 2 the PR could not be read

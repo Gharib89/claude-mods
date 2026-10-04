@@ -396,7 +396,7 @@ host_pr_create() { # <head> <base> <title> <body-file> <issue>
 
 host_pr_get() {
   api "$R/pulls/$1" --jq '{number, url: .html_url, title, body: (.body // ""),
-    head_sha: .head.sha, head_ref: .head.ref, base_ref: .base.ref,
+    head_sha: .head.sha, head_ref: .head.ref, base_ref: .base.ref, draft,
     state: (if .merged then "merged" elif .state == "open" then "open" else "closed" end),
     mergeable: (if .mergeable_state == "dirty" then "conflict"
                 elif .mergeable == true then "clean" else "unknown" end)}'

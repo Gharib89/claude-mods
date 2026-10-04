@@ -31,13 +31,13 @@
       "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/setup-skills/SKILL.md",
-      "computedHash": "e7e811e26a0c3b8ec3fe9447b80a7db66ccc50c3c905cccef7359024b8cad5c0"
+      "computedHash": "619ebfac3e07fdc1b13e53882ceab242976671e0b25487cd957eb985690b85fd"
     },
     "ship": {
       "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/ship/SKILL.md",
-      "computedHash": "28608ba70767e050d252d1ed169dd139a89c78f926fdffa23a222191d6a9e36a"
+      "computedHash": "35c1a0b7448f2683a43ade545642cd4e79ca1b082c4ea6f35baca3c44854f30a"
     },
     "show-me": {
       "source": "humanlayer/skills",

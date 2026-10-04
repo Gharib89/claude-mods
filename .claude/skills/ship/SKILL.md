@@ -3,7 +3,7 @@ name: ship
 description: Drive one tracker issue to a merge-ready PR in a single run, stopping only at the human merge gate. Use when the user wants to ship an issue, or to run the unattended lane.
 argument-hint: "[issue-number] [--unattended]"
 metadata:
-  version: 0.16.2
+  version: 0.16.4
   profile-schema: 3
   composes: mattpocock/skills#d81f3a183412e71a5b1e84ca21bc1a35eea03a60:tdd mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:writing-for-agents mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:code-review upstash/context7#e275a848a420e0d11c2822f61201ee005bfd1133:find-docs humanlayer/skills#ca7c8088db69e315a8b2deea43820270457f8f3c:show-me
 ---
@@ -236,11 +236,12 @@ near miss is asked back. On approval run `merge <pr> <issue|none> [--worktree
 and a Ship defect draft is filed only on a word of its own; a nonzero
 exit, or a `false` in `merge`'s or `cleanup`'s JSON, re-runs the mechanic that
 owns the step, and a step no mechanic re-does is a Ship defect for the summary.
-Unattended: `comment-pr <pr> --body-file` with the summary, and return.
+Unattended: `comment-pr <pr> --body-file` with the summary. Either lane then
+closes the phase, `run-file close 9` and its task to the `mirror`, and returns.
 **Done when:** attended, `merge`, every `update-issue-body` and `cleanup` exited
 0 with no `false`, and every Ship defect draft is filed, answered with
 candidates, carries its `command` on the row, or was declined; unattended,
-`comment-pr` posted and the run returned the PR link.
+`comment-pr` posted.
 
 ## The stops
 

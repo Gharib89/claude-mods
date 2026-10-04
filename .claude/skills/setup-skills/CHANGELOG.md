@@ -7,6 +7,24 @@ released version. See
 
 <!-- version list -->
 
+## v0.12.2 (2026-10-03)
+
+### Bug Fixes
+
+- **setup-skills**: A later gate write keeps the worse status
+  ([#465](https://github.com/Gharib89/skills/pull/465),
+  [`8c85f1d`](https://github.com/Gharib89/skills/commit/8c85f1dbc916629539b03d60498f041f8f9793be))
+
+
+## v0.12.1 (2026-10-03)
+
+### Refactoring
+
+- **setup-skills**: Local gate on Bash 3.2, one bootstrap test, stale gate comments
+  ([#463](https://github.com/Gharib89/skills/pull/463),
+  [`75a0de3`](https://github.com/Gharib89/skills/commit/75a0de3ed65528dda3630a8c748d5c9367bed81b))
+
+
 ## v0.12.0 (2026-10-02)
 
 ### Features
