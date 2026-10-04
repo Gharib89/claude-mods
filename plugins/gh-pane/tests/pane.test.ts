@@ -61,8 +61,9 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/27/sub_issues?per_page=100': [linked(29, 'open')],
   'repos/acme/widgets/issues/40/sub_issues?per_page=100': [linked(41, 'open')],
   'repos/acme/widgets/issues/25/dependencies/blocked_by': [linked(24, 'open'), linked(9, 'closed'), linked(5, 'open', 'acme/infra')],
-  // The map test's tree.
-  'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(9, 'open')],
+  // The map tests' trees.
+  'repos/acme/widgets/issues/14/sub_issues?per_page=100': [linked(15, 'open')],
+  'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(8, 'open'), linked(9, 'open')],
   'repos/acme/widgets/issues/9/dependencies/blocked_by': [linked(6, 'open')],
 }
 
@@ -200,6 +201,8 @@ test('the pane follows a non-default userConfig', {
     shipCommand: 'ship it {n}',
     triageCommand: '/look {issues}',
     releaseRequest: 'free #{n} from {user}',
+    mapLabel: 'plan',
+    mapCommand: 'walk {map}/{n}',
   },
 }, async ($, on) => {
   const { filled } = host(on, {
@@ -211,6 +214,8 @@ test('the pane follows a non-default userConfig', {
       issue(11, ['hold']),
       issue(12, ['mine']),
       issue(13, ['go'], assigned('cat', 50)),
+      issue(14, ['plan'], { sub_issues_summary: { total: 1, completed: 0 } }),
+      issue(15, []),
     ],
   })
   await open($)
@@ -224,15 +229,17 @@ test('the pane follows a non-default userConfig', {
   await ui.press({ key: 'ship-7' })
   await ui.press({ key: 'triage-8' })
   await ui.press({ key: 'release-13' })
-  expect(filled).toEqual(['ship it 7', '/look 8', 'free #13 from cat'])
+  await ui.press({ key: 'next-15' })
+  expect(filled).toEqual(['ship it 7', '/look 8', 'free #13 from cat', 'walk 14/15'])
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
   const { filled } = host(on, {
     issues: [
-      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 4, completed: 1 } }),
+      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 5, completed: 1 } }),
       issue(6, ['wayfinder:research'], assigned('ann', 72)),
       issue(7, ['wayfinder:grilling']),
+      issue(8, ['wayfinder:grilling', 'needs-info']),
       issue(9, ['wayfinder:grilling'], { issue_dependencies_summary: { blocked_by: 1 } }),
     ],
   })
@@ -245,6 +252,9 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   expect(await ui.find({ text: /◐ claimed 3d ago$/ })).toBeDefined()
   expect(await ui.find({ key: 'release-6' })).toBeUndefined()
   expect(await ui.find({ key: 'next-9' })).toBeUndefined()
+  // Waiting on its reporter, a map ticket is not next.
+  expect(await ui.find({ text: 'needs-info' })).toBeDefined()
+  expect(await ui.find({ key: 'next-8' })).toBeUndefined()
   await ui.press({ key: 'next-7' })
   expect(filled).toEqual(['/wayfinder 4 7'])
 })

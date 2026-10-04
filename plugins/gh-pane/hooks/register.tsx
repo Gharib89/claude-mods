@@ -68,7 +68,10 @@ async function propose($: EngineInterface, text: string) {
   $.ui.toast(`In the prompt: ${text}  (Enter sends it)`)
 }
 
-/** A row's state, first match wins. A map ticket (a sub-issue of a map) left open, unblocked and unclaimed is next. */
+/**
+ * A row's state, first match wins. A map ticket (a sub-issue of a map) left open, unblocked, unclaimed and waiting on
+ * neither triage nor info is next.
+ */
 function stateOf(
   issue: Issue,
   config: Config,
@@ -79,9 +82,11 @@ function stateOf(
   if (issue.assignees.length > 0) return { tag: `claimed (${issue.assignees.join(', ')})`, color: 'blue' }
   if (issue.labels.includes(config.readyForAgent)) return { tag: 'ready now', color: 'green', isReady: true }
   if (issue.labels.includes(config.readyForHuman)) return { tag: 'yours', color: 'magenta' }
+  const waiting = issue.labels.find(l => l === config.needsTriage || l === config.needsInfo)
+  if (waiting !== undefined) return { tag: waiting, color: 'gray' }
   if (issue.labels.includes(config.mapLabel)) return { tag: 'map', color: 'gray' }
   if (isMapTicket) return { tag: 'next', color: 'green', isNext: true }
-  return { tag: issue.labels.find(l => l === config.needsTriage || l === config.needsInfo) ?? 'untriaged', color: 'gray' }
+  return { tag: 'untriaged', color: 'gray' }
 }
 
 export const register: Register = (on, options) => {
