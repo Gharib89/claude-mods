@@ -1,5 +1,5 @@
 import type { On } from 'claude-code'
-import { expect, mock, test } from 'claude-code/testing'
+import { type Engine, expect, mock, test } from 'claude-code/testing'
 
 const NOW = Date.parse('2026-10-04T12:00:00Z')
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString()
@@ -93,7 +93,7 @@ function host(on: On, { remote = 'git@github.com:acme/widgets.git', issues = BAC
   return { calls, filled, clock }
 }
 
-const open = ($: Parameters<Parameters<typeof test>[1]>[0]) =>
+const open = ($: Engine) =>
   $.command.run({ command: 'gh-pane', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } })
 
 test('the pane orders the backlog and each button fills its command', async ($, on) => {
@@ -200,7 +200,7 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   const commands: unknown[] = []
   on('command.register', (_, e) => {
     commands.push(e)
-    return { value: undefined }
+    return { value: { command: e.name } }
   })
   await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
   // Registered immediate, so typed mid-turn it opens the pane at once.
