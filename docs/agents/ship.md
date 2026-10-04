@@ -23,7 +23,7 @@ The gate runs `scripts/check.sh full` from the harness, plus `secrets` (gitleaks
 
 ## CI
 
-Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace and every mod, tsc, test) on Claude Code 2.1.288
+Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace, then validate, tsc and test every mod under `plugins/`) on Claude Code 2.1.288
 No-checks legal: no, `mods.yml` runs on every PR with no `paths:` filter, so a PR with no checks means CI never started.
 Push policy: Default.
 
