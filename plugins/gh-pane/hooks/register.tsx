@@ -19,6 +19,8 @@ const configOf = (o: PluginOptions) => ({
   needsInfo: String(o.needsInfoLabel),
   readyForAgent: String(o.readyForAgentLabel),
   readyForHuman: String(o.readyForHumanLabel),
+  mapLabel: String(o.mapLabel),
+  mapCommand: String(o.mapCommand),
   prCap: Number(o.prCap),
   worktreeLayout: String(o.worktreeLayout),
   shipCommand: String(o.shipCommand),
@@ -66,14 +68,25 @@ async function propose($: EngineInterface, text: string) {
   $.ui.toast(`In the prompt: ${text}  (Enter sends it)`)
 }
 
-/** A row's state, first match wins. */
-function stateOf(issue: Issue, config: Config): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true } {
+/**
+ * A row's state, first match wins. A map ticket (a sub-issue of a map) left open, unblocked, unclaimed and waiting on
+ * neither triage nor info is next.
+ */
+function stateOf(
+  issue: Issue,
+  config: Config,
+  isMapTicket: boolean,
+): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true; isNext?: true } {
   if (issue.pr !== undefined) return { tag: 'in PR ', color: 'cyan', pr: issue.pr }
   if (issue.blockers.length > 0) return { tag: 'blocked by ', color: 'yellow', blockers: issue.blockers }
   if (issue.assignees.length > 0) return { tag: `claimed (${issue.assignees.join(', ')})`, color: 'blue' }
   if (issue.labels.includes(config.readyForAgent)) return { tag: 'ready now', color: 'green', isReady: true }
   if (issue.labels.includes(config.readyForHuman)) return { tag: 'yours', color: 'magenta' }
-  return { tag: issue.labels.find(l => l === config.needsTriage || l === config.needsInfo) ?? 'untriaged', color: 'gray' }
+  const waiting = issue.labels.find(l => l === config.needsTriage || l === config.needsInfo)
+  if (waiting !== undefined) return { tag: waiting, color: 'gray' }
+  if (issue.labels.includes(config.mapLabel)) return { tag: 'map', color: 'gray' }
+  if (isMapTicket) return { tag: 'next', color: 'green', isNext: true }
+  return { tag: 'untriaged', color: 'gray' }
 }
 
 export const register: Register = (on, options) => {
@@ -115,6 +128,10 @@ export const register: Register = (on, options) => {
 
     const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
     const has = (issue: Issue, label: string) => issue.labels.includes(label)
+    // A map and its tickets at every depth resolve by a closing comment, never a PR.
+    const mapOf = (issue: Issue): number | undefined =>
+      has(issue, config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
+    const isMapTicket = (issue: Issue) => mapOf(issue) !== undefined && !has(issue, config.mapLabel)
     const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
       <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
     )
@@ -123,18 +140,22 @@ export const register: Register = (on, options) => {
     const runs = new Map(
       view.issues
         .filter(issue => issue.assignees.length > 0)
-        .map(issue => [issue.number, runLine({ ...issue, now: view.fetchedAt, hasPr: issue.pr !== undefined })] as const),
+        .map(issue => [issue.number, runLine({ ...issue, now: view.fetchedAt, hasPr: issue.pr !== undefined, expectsPr: mapOf(issue) === undefined })] as const),
     )
     const lines = [...runs.values()].filter(line => line !== null)
     const stale = lines.filter(line => line.isStale).length
-    const ready = view.issues.filter(issue => stateOf(issue, config).isReady).length
+    // Ready now: every row with a button that starts work, a ship or a map's next.
+    const ready = view.issues.filter(issue => {
+      const state = stateOf(issue, config, isMapTicket(issue))
+      return state.isReady || state.isNext
+    }).length
     const isCapFull = view.prs >= config.prCap
 
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
     const row = (issue: Issue, prefix: string) => {
-      const state = stateOf(issue, config)
+      const state = stateOf(issue, config, isMapTicket(issue))
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•▾]/, ' ')}  ↳`
@@ -152,6 +173,14 @@ export const register: Register = (on, options) => {
           </Text>
           {state.isReady && (
             <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
+          )}
+          {state.isNext && (
+            <Button
+              key={`next-${issue.number}`}
+              plain
+              label="next"
+              onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
+            />
           )}
           {has(issue, config.needsTriage) && (
             <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
