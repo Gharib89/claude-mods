@@ -39,6 +39,13 @@ test('a matching worktree names the run', () => {
   })
 })
 
+test('a claim that closes without a PR is never stale', () => {
+  expect(runLine({ claimedAt: hoursAgo(72), now: NOW, hasPr: false, expectsPr: false })).toEqual({
+    text: '◐ claimed 3d ago',
+    isStale: false,
+  })
+})
+
 test('a worktree path maps to its issue through the layout', () => {
   const main = '/w/claude-mods'
   const layout = '{repo}.worktrees/{slug}-{n}'

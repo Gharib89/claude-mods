@@ -1,6 +1,6 @@
 {
   "name": "gh-pane",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",
@@ -9,6 +9,8 @@
     "needsInfoLabel": { "type": "string", "title": "Needs-info label", "description": "The label on an issue waiting for its reporter.", "default": "needs-info" },
     "readyForAgentLabel": { "type": "string", "title": "Ready-for-agent label", "description": "The label on an issue an agent may ship now.", "default": "ready-for-agent" },
     "readyForHumanLabel": { "type": "string", "title": "Ready-for-human label", "description": "The label on an issue that needs a person.", "default": "ready-for-human" },
+    "mapLabel": { "type": "string", "title": "Map label", "description": "The label on a planning map: an issue whose sub-issues are decision tickets that close without a PR.", "default": "wayfinder:map" },
+    "mapCommand": { "type": "string", "title": "Map command", "description": "What an open, unblocked, unclaimed map ticket's next button fills; {map} is the map's number, {n} the ticket's.", "default": "/wayfinder {map} {n}" },
     "prCap": { "type": "number", "title": "PR cap", "description": "How many open PRs the header counts against.", "default": 3 },
     "worktreeLayout": { "type": "string", "title": "Ship worktree layout", "description": "Where a ship run isolates issue {n}, relative to the main checkout's parent folder: {repo} is the main checkout's folder name, {slug} any one path segment.", "default": "{repo}.worktrees/{slug}-{n}" },
     "shipCommand": { "type": "string", "title": "Ship command", "description": "What a ready issue's ship button fills; {n} is the issue number.", "default": "/ship {n}" },
