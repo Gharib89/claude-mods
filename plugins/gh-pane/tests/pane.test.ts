@@ -264,19 +264,29 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   await $.tool.call({ tool: 'Bash', command: 'cd x && gh api repos/acme/widgets/pulls' })
   await clock.settle()
   expect(reads()).toBe(3)
-  await $.tool.call({ tool: 'Bash', command: 'git -C ../widgets push origin fix/9' })
-  await clock.settle()
-  expect(reads()).toBe(4)
+  // git's global options, with or without an argument, before `push`.
+  for (const command of ['git -C ../widgets push origin fix/9', 'git -c protocol.version=2 push', 'git --no-pager push']) {
+    const before = reads()
+    await $.tool.call({ tool: 'Bash', command })
+    await clock.settle()
+    expect([command, reads()]).toEqual([command, before + 1])
+  }
+  // Neither word as a command: no read.
+  for (const command of ['echo "gh "', 'cat legit push.md', 'git log --grep push']) {
+    await $.tool.call({ tool: 'Bash', command })
+    await clock.settle()
+  }
+  expect(reads()).toBe(6)
 
   await clock.advance(120_000)
-  expect(reads()).toBe(5)
+  expect(reads()).toBe(7)
 
   // Closed, the pane reads nothing: neither on the timer nor after a gh call.
   panes.isOpen = false
   await clock.advance(120_000)
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await clock.settle()
-  expect(reads()).toBe(5)
+  expect(reads()).toBe(7)
 })
 
 test('a newer read wins over an older one that answers after it', async ($, on) => {

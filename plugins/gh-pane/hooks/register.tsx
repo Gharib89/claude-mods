@@ -89,10 +89,12 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'gh-pane opened.' : `gh-pane is waiting: ${opened.reason}` }
   })
 
-  // A gh call or a push moves issues and PRs: re-read once it has run.
+  // A gh call or a push moves issues and PRs: re-read once it has run. Each word counts only where a command starts
+  // or follows a space or shell operator, and git's global options (`-C <path>`, `-c <key=value>`, `--no-pager`) may
+  // sit before `push`.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
-    if (/\bgh\s|\bgit\s+(?:-C\s+\S+\s+)?push\b/.test(e.command) && (await isOpen($))) {
+    if (/(?:^|[\s;&|(])(?:gh\s|git\s+(?:-[Cc]\s+\S+\s+|-\S+\s+)*push\b)/.test(e.command) && (await isOpen($))) {
       void refresh($, config).catch((error: unknown) => $.ui.toast(`gh-pane did not refresh: ${messageOf(error)}`))
     }
     return ran

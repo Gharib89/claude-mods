@@ -13,6 +13,14 @@ type Raw = Record<string, any>
 const list = async (run: Runner, path: string): Promise<Raw[]> =>
   (JSON.parse(await run(['gh', 'api', '--paginate', '--slurp', path])) as Raw[][]).flat()
 
+/** Runs `tasks` at most 8 at a time: GitHub's secondary rate limit refuses many concurrent requests. */
+async function inTurn(tasks: (() => Promise<void>)[]) {
+  const queue = [...tasks]
+  await Promise.all(Array.from({ length: 8 }, async () => {
+    for (let task = queue.shift(); task !== undefined; task = queue.shift()) await task()
+  }))
+}
+
 /** The open backlog, `layout` matching each claimed issue to its ship worktree. */
 export async function readBacklog(run: Runner, layout: string, now: string): Promise<Snapshot> {
   // gh fills `{owner}/{repo}` from the checkout's remotes, and with none on a GitHub host fails in its own words.
@@ -40,15 +48,15 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   // Sub-issues and blockers may live in another repo, so they match by url, never by number.
   const byUrl = new Map(issues.map(issue => [issue.url, issue]))
 
-  await Promise.all(
+  await inTurn(
     issues.flatMap((issue, i) => [
-      issue.subs.total > 0 &&
+      issue.subs.total > 0 && (() =>
         list(run, `repos/${repo}/issues/${issue.number}/sub_issues?per_page=100`).then(subs => {
           const children = subs.flatMap(s => byUrl.get(s.html_url) ?? [])
           issue.children = children.map(child => child.number)
           for (const child of children) child.parent = issue.number
-        }),
-      raws[i]!.issue_dependencies_summary?.blocked_by > 0 &&
+        })),
+      raws[i]!.issue_dependencies_summary?.blocked_by > 0 && (() =>
         list(run, `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`).then(blockers => {
           issue.blockers = blockers
             .filter(b => b.state === 'open')
@@ -56,12 +64,12 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
               const where = b.repository_url.slice(b.repository_url.lastIndexOf('/repos/') + '/repos/'.length)
               return { label: where === repo ? `#${b.number}` : `${where}#${b.number}`, url: b.html_url }
             })
-        }),
-      issue.assignees.length > 0 &&
+        })),
+      issue.assignees.length > 0 && (() =>
         list(run, `repos/${repo}/issues/${issue.number}/events?per_page=100`).then(events => {
           issue.claimedAt = events.findLast(ev => ev.event === 'assigned')?.created_at
-        }),
-    ]),
+        })),
+    ]).filter(task => task !== false),
   )
   return { repo, issues, prs: prs.length, fetchedAt: now }
 }
