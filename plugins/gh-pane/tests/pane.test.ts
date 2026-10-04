@@ -76,7 +76,8 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
   const calls: string[][] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
-  const panes = { isOpen: true }
+  const panes = { isOpen: true, isBroken: false }
+  const toasts: string[] = []
   const repo = { reads: 0, failsAt: 0 }
   on('process.run', async (_$, e, next) => {
     calls.push([...e.argv])
@@ -104,16 +105,22 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
     return ok(JSON.stringify([API[path] ?? []]))
   })
   on('ui.open', async () => ({ value: { isPlaced: true } }))
-  on('ui.panes', async () => ({
-    value: panes.isOpen ? [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] : [],
-  }))
+  // Broken, nothing beneath answers, so $.ui.panes rejects.
+  on('ui.panes', async (_$, e, next) =>
+    panes.isBroken
+      ? next(e)
+      : { value: panes.isOpen ? [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] : [] },
+  )
   on('prompt.read', async () => ({ value: { text: '', cursor: 0 } }))
-  on('ui.toast', async () => ({ value: undefined }))
+  on('ui.toast', async (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
   on('prompt.fill', async (_$, e) => {
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock, panes, repo }
+  return { calls, filled, clock, panes, repo, toasts }
 }
 
 const open = ($: Engine) =>
@@ -287,6 +294,19 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await clock.settle()
   expect(reads()).toBe(7)
+})
+
+test('a timer tick or a re-read that fails says so in a toast', async ($, on) => {
+  const { clock, panes, toasts } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
+  panes.isBroken = true
+  await clock.advance(120_000)
+  await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
+  await clock.settle()
+  expect(toasts).toEqual([expect.stringMatching(/^gh-pane did not refresh: ./), expect.stringMatching(/^gh-pane did not refresh: ./)])
 })
 
 test('a newer read wins over an older one that answers after it', async ($, on) => {

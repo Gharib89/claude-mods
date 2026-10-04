@@ -34,7 +34,7 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 let reads = 0
 
 async function refresh($: EngineInterface, config: Config) {
-  const read = ++reads
+  const ticket = ++reads
   const run = async (argv: string[]) => {
     const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
       throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
@@ -44,11 +44,20 @@ async function refresh($: EngineInterface, config: Config) {
   }
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  if (read === reads) await update($, snapshot, () => next)
+  if (ticket === reads) await update($, snapshot, () => next)
 }
 
 async function isOpen($: EngineInterface) {
   return (await $.ui.panes()).some(pane => pane.id === PANE)
+}
+
+// Nothing awaits a timer tick or a re-read after a tool call, so a failure there is toasted rather than dropped.
+async function refreshIfOpen($: EngineInterface, config: Config) {
+  try {
+    if (await isOpen($)) await refresh($, config)
+  } catch (error) {
+    $.ui.toast(`gh-pane did not refresh: ${messageOf(error)}`)
+  }
 }
 
 async function propose($: EngineInterface, text: string) {
@@ -77,9 +86,7 @@ export const register: Register = (on, options) => {
       // Typed mid-turn, the pane opens at once instead of waiting for the turn to end.
       immediate: true,
     })
-    $.clock.every(120_000, async () => {
-      if (await isOpen($)) await refresh($, config)
-    })
+    $.clock.every(120_000, () => refreshIfOpen($, config))
     return next(e)
   })
 
@@ -94,9 +101,7 @@ export const register: Register = (on, options) => {
   // sit before `push`.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
-    if (/(?:^|[\s;&|(])(?:gh\s|git\s+(?:-[Cc]\s+\S+\s+|-\S+\s+)*push\b)/.test(e.command) && (await isOpen($))) {
-      void refresh($, config).catch((error: unknown) => $.ui.toast(`gh-pane did not refresh: ${messageOf(error)}`))
-    }
+    if (/(?:^|[\s;&|(])(?:gh\s|git\s+(?:-[Cc]\s+\S+\s+|-\S+\s+)*push\b)/.test(e.command)) void refreshIfOpen($, config)
     return ran
   })
 

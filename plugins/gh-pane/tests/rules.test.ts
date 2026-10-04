@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { closesOf, runLine, worktreeIssue } from '../hooks/rules'
+import { closesOf, fill, runLine, worktreeIssue } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
@@ -59,4 +59,13 @@ test('a PR body closes the issues its closing keywords name', () => {
   expect(closesOf('fixes #3, resolves #4 and Fixed: #5')).toEqual([3, 4, 5])
   expect(closesOf('Refs #12, see #13; discloses #14; closes #15x')).toEqual([])
   expect(closesOf('closes owner/repo#9')).toEqual([])
+})
+
+test('a template fills each placeholder it has a value for, and leaves the rest verbatim', () => {
+  expect(fill('/ship {n} {title}', { n: 7 })).toBe('/ship 7 {title}')
+  expect(fill('/ship {n}, then {n} again', { n: 7 })).toBe('/ship 7, then 7 again')
+  expect(fill('no placeholder here', { n: 7 })).toBe('no placeholder here')
+  // A value lands literally, `$&` included, and an inherited key is not a value.
+  expect(fill('free {user}', { user: '$& and $1' })).toBe('free $& and $1')
+  expect(fill('{constructor} {toString}', {})).toBe('{constructor} {toString}')
 })
