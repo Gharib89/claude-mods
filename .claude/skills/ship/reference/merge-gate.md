@@ -161,7 +161,10 @@ to this gate); otherwise it squash-merges with the PR title as the subject,
 closes the issue, deletes the remote branch, fast-forwards the local base, and
 releases the claim and strips `ready-for-agent`, so a reopened issue goes back
 through triage. Then each drafted tracker section, then `cleanup <issue|none>`,
-which removes the worktree and force-deletes the local branch.
+which removes the worktree and force-deletes the local branch. The Run file
+lives in the scratchpad, so `cleanup` leaves it: once its `Done when:` holds,
+every Ship defect draft settled too, `run-file close 9` and set the task to the
+returned `mirror`, so the record and the task list both end with phase 9 done.
 
 **If the human says no or wants changes**, treat the note as the next round of
 work: apply it on the same branch, re-run the local gate, come back to this
@@ -180,10 +183,11 @@ where the write succeeds. Before or after the merge, either order holds.
 
 ## Unattended: post to the PR, then return
 
-`comment-pr <pr> --body-file` with the summary, then **return** with the PR
-link. Do not wait, poll, or merge; the claim stays on the issue, which carries
-the open PR, so later fires skip it until a human merges. The last line becomes
-"Ready to merge: a human merges from the PR." A Ship defect's draft is never
+`comment-pr <pr> --body-file` with the summary, `run-file close 9` with the
+task set to the returned `mirror`, then **return** with the PR link. Do not
+wait, poll, or merge; the claim stays on the issue, which carries the open PR,
+so later fires skip it until a human merges. The last line becomes "Ready to
+merge: a human merges from the PR." A Ship defect's draft is never
 filed from here, and the comment drops the "file defects" line: it carries each
 draft verbatim under the command a human runs from a file they save it to,
 `.claude/skills/ship/scripts/file-issue.sh --repo Gharib89/skills --title

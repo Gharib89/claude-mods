@@ -190,7 +190,7 @@ host_pr_create() { # <head> <base> <title> <body-file> <issue>
 _pr_norm() {
   jq --arg u "$1" '{number: .pullRequestId, url: $u, title, body: (.description // ""),
     head_sha: .lastMergeSourceCommit.commitId, head_ref: (.sourceRefName | ltrimstr("refs/heads/")),
-    base_ref: (.targetRefName | ltrimstr("refs/heads/")),
+    base_ref: (.targetRefName | ltrimstr("refs/heads/")), draft: (.isDraft // false),
     state: (if .status == "completed" then "merged" elif .status == "active" then "open" else "closed" end),
     mergeable: (if .mergeStatus == "conflicts" then "conflict" elif .mergeStatus == "succeeded" then "clean" else "unknown" end)}'
 }
