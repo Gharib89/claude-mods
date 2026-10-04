@@ -128,8 +128,10 @@ export const register: Register = (on, options) => {
 
     const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
     const has = (issue: Issue, label: string) => issue.labels.includes(label)
-    // A map's tickets resolve by a closing comment, never a PR.
-    const isMapTicket = (issue: Issue) => issue.parent !== undefined && has(byNumber.get(issue.parent)!, config.mapLabel)
+    // A map and its tickets at every depth resolve by a closing comment, never a PR.
+    const mapOf = (issue: Issue): number | undefined =>
+      has(issue, config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
+    const isMapTicket = (issue: Issue) => mapOf(issue) !== undefined && !has(issue, config.mapLabel)
     const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
       <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
     )
@@ -138,11 +140,15 @@ export const register: Register = (on, options) => {
     const runs = new Map(
       view.issues
         .filter(issue => issue.assignees.length > 0)
-        .map(issue => [issue.number, runLine({ ...issue, now: view.fetchedAt, hasPr: issue.pr !== undefined, expectsPr: !isMapTicket(issue) })] as const),
+        .map(issue => [issue.number, runLine({ ...issue, now: view.fetchedAt, hasPr: issue.pr !== undefined, expectsPr: mapOf(issue) === undefined })] as const),
     )
     const lines = [...runs.values()].filter(line => line !== null)
     const stale = lines.filter(line => line.isStale).length
-    const ready = view.issues.filter(issue => stateOf(issue, config, false).isReady).length
+    // Ready now: every row with a button that starts work, a ship or a map's next.
+    const ready = view.issues.filter(issue => {
+      const state = stateOf(issue, config, isMapTicket(issue))
+      return state.isReady || state.isNext
+    }).length
     const isCapFull = view.prs >= config.prCap
 
     const triage = (issues: number[]) =>
@@ -173,7 +179,7 @@ export const register: Register = (on, options) => {
               key={`next-${issue.number}`}
               plain
               label="next"
-              onPress={() => propose($, fill(config.mapCommand, { map: issue.parent!, n: issue.number }))}
+              onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
             />
           )}
           {has(issue, config.needsTriage) && (

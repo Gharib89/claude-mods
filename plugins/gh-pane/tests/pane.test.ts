@@ -63,6 +63,7 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/25/dependencies/blocked_by': [linked(24, 'open'), linked(9, 'closed'), linked(5, 'open', 'acme/infra')],
   // The map tests' trees.
   'repos/acme/widgets/issues/14/sub_issues?per_page=100': [linked(15, 'open')],
+  'repos/acme/widgets/issues/7/sub_issues?per_page=100': [linked(10, 'open'), linked(11, 'open')],
   'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(8, 'open'), linked(9, 'open')],
   'repos/acme/widgets/issues/9/dependencies/blocked_by': [linked(6, 'open')],
 }
@@ -220,7 +221,7 @@ test('the pane follows a non-default userConfig', {
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 1 · runs: 1 active · 1 stale' })).toBeDefined()
+  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 2 · runs: 1 active · 1 stale' })).toBeDefined()
   expect(await ui.find({ text: /◐ ship worktree 9/ })).toBeDefined()
   expect(await ui.find({ text: /needs triage \(1\)/ })).toBeDefined()
   expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
@@ -236,27 +237,32 @@ test('the pane follows a non-default userConfig', {
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
   const { filled } = host(on, {
     issues: [
-      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 5, completed: 1 } }),
+      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 5, completed: 1 }, ...assigned('ann', 72) }),
       issue(6, ['wayfinder:research'], assigned('ann', 72)),
-      issue(7, ['wayfinder:grilling']),
+      issue(7, ['wayfinder:grilling'], { sub_issues_summary: { total: 2, completed: 0 } }),
+      // A ticket's own sub-issues are map tickets too.
+      issue(10, [], assigned('bob', 72)),
+      issue(11, []),
       issue(8, ['wayfinder:grilling', 'needs-info']),
       issue(9, ['wayfinder:grilling'], { issue_dependencies_summary: { blocked_by: 1 } }),
     ],
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // Ready now counts the next rows: #7 and #11.
+  expect(await ui.find({ text: 'PR cap 0/3 · ready now: 2 · runs: 3 active · 0 stale' })).toBeDefined()
   expect(await ui.find({ text: /untriaged/ })).toBeUndefined()
-  expect(await ui.find({ text: 'map' })).toBeDefined()
   expect(await ui.find({ text: /^blocked by #6$/ })).toBeDefined()
   // A map ticket resolves by a closing comment, not a PR: an old claim is not stale.
   expect(await ui.find({ text: /◐ claimed 3d ago$/ })).toBeDefined()
-  expect(await ui.find({ key: 'release-6' })).toBeUndefined()
+  for (const n of [4, 6, 10]) expect(await ui.find({ key: `release-${n}` })).toBeUndefined()
   expect(await ui.find({ key: 'next-9' })).toBeUndefined()
   // Waiting on its reporter, a map ticket is not next.
   expect(await ui.find({ text: 'needs-info' })).toBeDefined()
   expect(await ui.find({ key: 'next-8' })).toBeUndefined()
   await ui.press({ key: 'next-7' })
-  expect(filled).toEqual(['/wayfinder 4 7'])
+  await ui.press({ key: 'next-11' })
+  expect(filled).toEqual(['/wayfinder 4 7', '/wayfinder 4 11'])
 })
 
 test('an empty repo says so, with no fixture data', async ($, on) => {
