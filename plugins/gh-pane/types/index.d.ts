@@ -13,8 +13,8 @@ export type Issue = {
   subs: { total: number; done: number }
   /** The open issue it is a sub-issue of. */
   parent?: number
-  /** Its open blockers. */
-  blockers: number[]
+  /** Its open blockers, labelled `#N` in this repo and `owner/repo#N` in another. */
+  blockers: { label: string; url: string }[]
   /** The open PR whose body closes it. */
   pr?: number
   /** When it was last assigned: the claim's start. */

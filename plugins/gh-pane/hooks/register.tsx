@@ -28,17 +28,23 @@ const configOf = (o: PluginOptions) => ({
 
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
+
+// Reads overlap (a timer, a gh call, the command): only the latest one started may land.
+let reads = 0
+
 async function refresh($: EngineInterface, config: Config) {
+  const read = ++reads
   const run = async (argv: string[]) => {
-    const { exitCode, stdout, stderr } = await $.process.run(argv)
+    const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
+      throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
+    })
     if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
     return stdout
   }
   const now = new Date(await $.clock.now()).toISOString()
-  const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({
-    error: `gh-pane: ${(error instanceof Error ? error.message : String(error)).split('\n')[0]}`,
-  }))
-  await update($, snapshot, () => next)
+  const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
+  if (read === reads) await update($, snapshot, () => next)
 }
 
 async function isOpen($: EngineInterface) {
@@ -52,7 +58,7 @@ async function propose($: EngineInterface, text: string) {
 }
 
 /** A row's state, first match wins. */
-function stateOf(issue: Issue, config: Config): { tag: string; color: string; pr?: number; blockers?: number[]; isReady?: true } {
+function stateOf(issue: Issue, config: Config): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true } {
   if (issue.pr !== undefined) return { tag: 'in PR ', color: 'cyan', pr: issue.pr }
   if (issue.blockers.length > 0) return { tag: 'blocked by ', color: 'yellow', blockers: issue.blockers }
   if (issue.assignees.length > 0) return { tag: `claimed (${issue.assignees.join(', ')})`, color: 'blue' }
@@ -86,7 +92,9 @@ export const register: Register = (on, options) => {
   // A gh call or a push moves issues and PRs: re-read once it has run.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
-    if (/\bgh\s|\bgit\s+push\b/.test(e.command) && (await isOpen($))) void refresh($, config)
+    if (/\bgh\s|\bgit\s+(?:-C\s+\S+\s+)?push\b/.test(e.command) && (await isOpen($))) {
+      void refresh($, config).catch((error: unknown) => $.ui.toast(`gh-pane did not refresh: ${messageOf(error)}`))
+    }
     return ran
   })
 
@@ -103,7 +111,8 @@ export const register: Register = (on, options) => {
     const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
       <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
     )
-    const refs = (ns: number[]) => ns.flatMap((n, i) => (i === 0 ? [ref(n)] : [', ', ref(n)]))
+    const blockers = (list: Issue['blockers']) =>
+      list.flatMap(({ label, url }, i) => [...(i === 0 ? [] : [', ']), <Link key={label} href={url} label={label} />])
     const runs = new Map(
       view.issues
         .filter(issue => issue.assignees.length > 0)
@@ -113,6 +122,9 @@ export const register: Register = (on, options) => {
     const stale = lines.filter(line => line.isStale).length
     const ready = view.issues.filter(issue => stateOf(issue, config).isReady).length
     const isCapFull = view.prs >= config.prCap
+
+    const triage = (issues: number[]) =>
+      fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
     const row = (issue: Issue, prefix: string) => {
       const state = stateOf(issue, config)
@@ -129,10 +141,13 @@ export const register: Register = (on, options) => {
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
-            {state.blockers ? refs(state.blockers) : ''}
+            {state.blockers ? blockers(state.blockers) : ''}
           </Text>
           {state.isReady && (
             <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
+          )}
+          {has(issue, config.needsTriage) && (
+            <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
           )}
         </Box>,
         run && (
@@ -154,13 +169,23 @@ export const register: Register = (on, options) => {
       ]
     }
 
-    const triage = (issues: number[]) =>
-      fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
+    // Each sub-issue below `issue`, at every depth.
+    const branch = (issue: Issue, indent: string): ReturnType<typeof row> => [
+      issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ✓ ${issue.subs.done} done`}</Text> : undefined,
+      ...issue.children.flatMap((n, i) => {
+        const isLast = i === issue.children.length - 1
+        const child = byNumber.get(n)!
+        return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
+      }),
+    ]
+
+    // A spec tree draws in place whatever its root's label; a lone issue waiting on triage or info waits below.
     const top = view.issues.filter(issue => issue.parent === undefined)
-    const roots = top.filter(issue => !has(issue, config.needsTriage) && !has(issue, config.needsInfo))
+    const isWaiting = (issue: Issue, label: string) => issue.subs.total === 0 && has(issue, label)
+    const roots = top.filter(issue => !isWaiting(issue, config.needsTriage) && !isWaiting(issue, config.needsInfo))
     const waiting = [
-      { name: 'needs triage', issues: top.filter(issue => has(issue, config.needsTriage)), canTriage: true },
-      { name: 'needs info', issues: top.filter(issue => has(issue, config.needsInfo)), canTriage: false },
+      { name: 'needs triage', issues: top.filter(issue => isWaiting(issue, config.needsTriage)), canTriage: true },
+      { name: 'needs info', issues: top.filter(issue => isWaiting(issue, config.needsInfo)), canTriage: false },
     ]
 
     return (
@@ -169,13 +194,12 @@ export const register: Register = (on, options) => {
           {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
         </Text>
         {roots.map(root =>
-          root.children.length === 0 && root.subs.total === 0 ? (
+          root.subs.total === 0 ? (
             row(root, '•')
           ) : (
             <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
               {row(root, '▾')}
-              {root.subs.done > 0 && <Text dimColor>{`  ├ ✓ ${root.subs.done} done`}</Text>}
-              {root.children.map((n, i) => row(byNumber.get(n)!, i === root.children.length - 1 ? '  └' : '  ├'))}
+              {branch(root, '  ')}
             </Box>
           ),
         )}
@@ -188,17 +212,7 @@ export const register: Register = (on, options) => {
                   <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
                 )}
               </Box>
-              {issues.map((issue, i) => (
-                <Box key={`waiting-${issue.number}`} gap={1}>
-                  <Text dimColor>{i === issues.length - 1 ? '  └' : '  ├'}</Text>
-                  <Text>
-                    {ref(issue.number)} {cut(issue.title, Math.max(8, room - 24))}
-                  </Text>
-                  {canTriage && (
-                    <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
-                  )}
-                </Box>
-              ))}
+              {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├'))}
             </Box>
           ),
         )}

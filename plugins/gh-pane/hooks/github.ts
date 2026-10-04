@@ -15,9 +15,8 @@ const list = async (run: Runner, path: string): Promise<Raw[]> =>
 
 /** The open backlog, `layout` matching each claimed issue to its ship worktree. */
 export async function readBacklog(run: Runner, layout: string, now: string): Promise<Snapshot> {
-  const remote = (await run(['git', 'remote', 'get-url', 'origin'])).trim()
-  const repo = /github\.com[:/](.+?)(?:\.git)?$/.exec(remote)?.[1]
-  if (repo === undefined) throw new Error(`origin is not on GitHub: ${remote}`)
+  // gh fills `{owner}/{repo}` from the checkout's remotes, and with none on a GitHub host fails in its own words.
+  const repo = (await run(['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name'])).trim()
   // The first worktree listed is the main checkout.
   const [main = '', ...paths] = [...(await run(['git', 'worktree', 'list', '--porcelain'])).matchAll(/^worktree (.+)$/gm)].map(m => m[1]!)
   const worktrees = new Map(paths.map(path => [worktreeIssue(layout, main, path), path.slice(path.lastIndexOf('/') + 1)]))
@@ -38,18 +37,25 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
     pr: closer.get(raw.number),
     worktree: worktrees.get(raw.number),
   }))
-  const byNumber = new Map(issues.map(issue => [issue.number, issue]))
+  // Sub-issues and blockers may live in another repo, so they match by url, never by number.
+  const byUrl = new Map(issues.map(issue => [issue.url, issue]))
 
   await Promise.all(
     issues.flatMap((issue, i) => [
       issue.subs.total > 0 &&
         list(run, `repos/${repo}/issues/${issue.number}/sub_issues?per_page=100`).then(subs => {
-          issue.children = subs.map(s => s.number as number).filter(n => byNumber.has(n))
-          for (const n of issue.children) byNumber.get(n)!.parent = issue.number
+          const children = subs.flatMap(s => byUrl.get(s.html_url) ?? [])
+          issue.children = children.map(child => child.number)
+          for (const child of children) child.parent = issue.number
         }),
       raws[i]!.issue_dependencies_summary?.blocked_by > 0 &&
         list(run, `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`).then(blockers => {
-          issue.blockers = blockers.filter(b => b.state === 'open').map(b => b.number)
+          issue.blockers = blockers
+            .filter(b => b.state === 'open')
+            .map(b => {
+              const where = b.repository_url.slice(b.repository_url.lastIndexOf('/repos/') + '/repos/'.length)
+              return { label: where === repo ? `#${b.number}` : `${where}#${b.number}`, url: b.html_url }
+            })
         }),
       issue.assignees.length > 0 &&
         list(run, `repos/${repo}/issues/${issue.number}/events?per_page=100`).then(events => {

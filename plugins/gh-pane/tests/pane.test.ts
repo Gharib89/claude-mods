@@ -28,27 +28,39 @@ const BACKLOG: Raw[] = [
   issue(20, ['ready-for-human'], { sub_issues_summary: { total: 4, completed: 1 } }),
   issue(24, ['ready-for-agent'], assigned('ann', 5)),
   issue(25, ['ready-for-agent'], { issue_dependencies_summary: { blocked_by: 2 } }),
-  issue(27, ['ready-for-agent']),
+  issue(27, ['ready-for-agent'], { sub_issues_summary: { total: 1, completed: 0 } }),
+  issue(29, ['ready-for-human']),
   issue(22, ['ready-for-agent'], assigned('ann', 2)),
   issue(35, ['ready-for-agent'], assigned('bob', 72)),
   issue(36, ['ready-for-agent'], assigned('ann', 72)),
   issue(32, ['needs-triage']),
   issue(33, ['needs-triage']),
-  issue(19, ['needs-info']),
+  issue(19, ['needs-info'], assigned('bob', 72)),
+  issue(40, ['needs-info'], { sub_issues_summary: { total: 1, completed: 0 } }),
+  issue(41, ['needs-triage']),
   { ...issue(31, []), pull_request: {}, html_url: 'https://github.com/acme/widgets/pull/31', body: 'Closes #36' },
 ]
 
+/** An issue as a sub-issue or blocker list answers it, in its own repo. */
+const linked = (number: number, state: string, repo = 'acme/widgets') => ({
+  number,
+  state,
+  html_url: `https://github.com/${repo}/issues/${number}`,
+  repository_url: `https://api.github.com/repos/${repo}`,
+})
+
 const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/20/sub_issues?per_page=100': [
-    { number: 23, state: 'closed' },
-    { number: 24, state: 'open' },
-    { number: 25, state: 'open' },
-    { number: 27, state: 'open' },
+    linked(23, 'closed'),
+    linked(24, 'open'),
+    linked(25, 'open'),
+    linked(27, 'open'),
+    // Another repo's #32: the local #32 stays in the triage list.
+    linked(32, 'open', 'acme/other'),
   ],
-  'repos/acme/widgets/issues/25/dependencies/blocked_by': [
-    { number: 24, state: 'open' },
-    { number: 9, state: 'closed' },
-  ],
+  'repos/acme/widgets/issues/27/sub_issues?per_page=100': [linked(29, 'open')],
+  'repos/acme/widgets/issues/40/sub_issues?per_page=100': [linked(41, 'open')],
+  'repos/acme/widgets/issues/25/dependencies/blocked_by': [linked(24, 'open'), linked(9, 'closed'), linked(5, 'open', 'acme/infra')],
 }
 
 const PORCELAIN = [
@@ -57,23 +69,31 @@ const PORCELAIN = [
   'worktree /w/wt/9\nHEAD 3\nbranch refs/heads/feat/9',
 ].join('\n\n')
 
-type Host = { remote?: string; issues?: Raw[]; ghFails?: string; ghMissing?: boolean }
+type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean }
 
-/** Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. */
-function host(on: On, { remote = 'git@github.com:acme/widgets.git', issues = BACKLOG, ghFails, ghMissing }: Host = {}) {
+/** Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails. */
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Host = {}) {
   const calls: string[][] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
   const panes = { isOpen: true }
+  const repo = { reads: 0, failsAt: 0 }
   on('process.run', async (_$, e, next) => {
     calls.push([...e.argv])
     const [cmd, sub, ...rest] = e.argv
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
-    if (cmd === 'git' && sub === 'remote') return ok(`${remote}\n`)
+    const fail = (stderr: string) => ({ value: { exitCode: 1, stdout: '', stderr, isStdoutTruncated: false, isStderrTruncated: false } })
     if (cmd === 'git' && sub === 'worktree') return ok(`${PORCELAIN}\n`)
     // Nothing beneath answers, so $.process.run rejects as it does for a command that cannot start.
     if (ghMissing) return next(e)
-    if (ghFails !== undefined) return { value: { exitCode: 1, stdout: '', stderr: `${ghFails}\nmore detail\n`, isStdoutTruncated: false, isStderrTruncated: false } }
+    if (ghFails !== undefined) return fail(`${ghFails}\nmore detail\n`)
+    if (rest[0] === 'repos/{owner}/{repo}') {
+      if (++repo.reads === repo.failsAt) return fail('gh: HTTP 401: Bad credentials\n')
+      // gh's own words when no remote of the checkout is on a GitHub host.
+      return isOffGitHub
+        ? fail('unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitHub host.\n')
+        : ok('acme/widgets\n')
+    }
     const path = rest.at(-1)!
     const events = /issues\/(\d+)\/events/.exec(path)
     if (events) {
@@ -93,7 +113,7 @@ function host(on: On, { remote = 'git@github.com:acme/widgets.git', issues = BAC
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock, panes }
+  return { calls, filled, clock, panes, repo }
 }
 
 const open = ($: Engine) =>
@@ -107,10 +127,11 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     filled.length = 0
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 1 stale' })).toBeDefined()
+    expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
     expect(await ui.find({ text: '██░░░░░░ 1/4' })).toBeDefined()
     expect(await ui.find({ text: /✓ 1 done/ })).toBeDefined()
-    expect(await ui.find({ text: /^blocked by #24$/ })).toBeDefined()
+    expect(await ui.find({ text: /^blocked by #24, acme\/infra#5$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Link', text: 'acme/infra#5' }))?.props.href).toBe('https://github.com/acme/infra/issues/5')
     expect(await ui.find({ text: 'in PR #31' })).toBeDefined()
     expect(await ui.find({ text: 'claimed (ann)' })).toBeDefined()
     expect(await ui.find({ text: 'yours' })).toBeDefined()
@@ -127,15 +148,23 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     expect(await ui.find({ text: /needs triage \(2\)/ })).toBeDefined()
     expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
     expect(await ui.find({ key: 'triage-19' })).toBeUndefined()
+    // A waiting row carries its run line: #19's claim is stale.
+    expect(await ui.find({ key: 'release-19' })).toBeDefined()
+    // Every level of a tree draws: #29 under #27 under #20, and #41 under the needs-info #40, triage button and all.
+    expect(await ui.find({ type: 'Link', text: '#29' })).toBeDefined()
+    expect(await ui.find({ type: 'Link', text: '#40' })).toBeDefined()
+    expect(await ui.find({ key: 'triage-41' })).toBeDefined()
 
     await ui.press({ key: 'ship-27' })
     await ui.press({ key: 'triage-32' })
     await ui.press({ key: 'triage-all' })
+    await ui.press({ key: 'triage-41' })
     await ui.press({ key: 'release-35' })
     expect(filled).toEqual([
       '/ship 27',
       '/triage 32',
       '/triage #32, #33 one by one',
+      '/triage 41',
       'Release the ship claim on #35: unassign bob and comment that the claim went stale with no PR.',
     ])
     await ui.unmount()
@@ -153,25 +182,39 @@ test('the pane orders the backlog and each button fills its command', async ($, 
 test('the pane follows a non-default userConfig', {
   options: {
     readyForAgentLabel: 'go',
+    readyForHumanLabel: 'mine',
     needsTriageLabel: 'inbox',
+    needsInfoLabel: 'hold',
     prCap: 5,
     worktreeLayout: 'wt/{n}',
     shipCommand: 'ship it {n}',
     triageCommand: '/look {issues}',
+    releaseRequest: 'free #{n} from {user}',
   },
 }, async ($, on) => {
   const { filled } = host(on, {
-    issues: [issue(7, ['go']), issue(8, ['inbox']), issue(9, ['go'], assigned('ann', 1)), issue(10, ['ready-for-agent'])],
+    issues: [
+      issue(7, ['go']),
+      issue(8, ['inbox']),
+      issue(9, ['go'], assigned('ann', 1)),
+      issue(10, ['ready-for-agent']),
+      issue(11, ['hold']),
+      issue(12, ['mine']),
+      issue(13, ['go'], assigned('cat', 50)),
+    ],
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 1 · runs: 1 active · 0 stale' })).toBeDefined()
+  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 1 · runs: 1 active · 1 stale' })).toBeDefined()
   expect(await ui.find({ text: /◐ ship worktree 9/ })).toBeDefined()
   expect(await ui.find({ text: /needs triage \(1\)/ })).toBeDefined()
+  expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
+  expect(await ui.find({ text: 'yours' })).toBeDefined()
   expect(await ui.find({ key: 'ship-10' })).toBeUndefined()
   await ui.press({ key: 'ship-7' })
   await ui.press({ key: 'triage-8' })
-  expect(filled).toEqual(['ship it 7', '/look 8'])
+  await ui.press({ key: 'release-13' })
+  expect(filled).toEqual(['ship it 7', '/look 8', 'free #13 from cat'])
 })
 
 test('an empty repo says so, with no fixture data', async ($, on) => {
@@ -184,8 +227,8 @@ test('an empty repo says so, with no fixture data', async ($, on) => {
 
 for (const [name, setup, line] of [
   ['a failing gh', { ghFails: 'gh: HTTP 401: Bad credentials' }, 'gh-pane: gh api: gh: HTTP 401: Bad credentials'],
-  ['a missing gh', { ghMissing: true }, /^gh-pane: .*process\.run/],
-  ['a repo off GitHub', { remote: 'git@gitlab.com:acme/widgets.git' }, 'gh-pane: origin is not on GitHub: git@gitlab.com:acme/widgets.git'],
+  ['a missing gh', { ghMissing: true }, /^gh-pane: gh did not run \(not installed, or timed out\): ./],
+  ['a repo off GitHub', { isOffGitHub: true }, /^gh-pane: gh api: unable to expand placeholder in path: none of the git remotes/],
 ] as const) {
   test(`${name} shows one error line`, async ($, on) => {
     host(on, setup)
@@ -221,14 +264,31 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   await $.tool.call({ tool: 'Bash', command: 'cd x && gh api repos/acme/widgets/pulls' })
   await clock.settle()
   expect(reads()).toBe(3)
+  await $.tool.call({ tool: 'Bash', command: 'git -C ../widgets push origin fix/9' })
+  await clock.settle()
+  expect(reads()).toBe(4)
 
   await clock.advance(120_000)
-  expect(reads()).toBe(4)
+  expect(reads()).toBe(5)
 
   // Closed, the pane reads nothing: neither on the timer nor after a gh call.
   panes.isOpen = false
   await clock.advance(120_000)
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await clock.settle()
-  expect(reads()).toBe(4)
+  expect(reads()).toBe(5)
+})
+
+test('a newer read wins over an older one that answers after it', async ($, on) => {
+  const { repo, clock } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  await open($)
+  // Two reads in flight: the older still has the backlog's sub-issues, blockers and claims to read when the newer
+  // fails at its first call and lands.
+  repo.failsAt = 3
+  await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
+  await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
+  await clock.settle()
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
 })
