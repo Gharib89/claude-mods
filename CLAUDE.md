@@ -6,7 +6,7 @@ A marketplace of **mods**: Claude Code plugins made of function hooks, `register
 
 - `.claude-plugin/marketplace.json`: marketplace `claude-mods`, one entry per mod, sourced from `./plugins/<name>`.
 - `plugins/<name>/`: one mod, self-contained. Its `tsconfig.json` extends `./.claude-plugin/types/tsconfig.json`, which the engine generates (see the dev loop).
-- Every mod is **generic**: it serves any long task, so its code and messages speak of tasks, steps and run files, and it reads only its own folder.
+- Every mod is **generic**: it serves any owner, so its code and messages speak of tasks, steps and run files, and any detail of one owner's workflow is a `userConfig` option. It reads its own folder, and the session repo only through git and `gh api` (`docs/adr/0001-mods-may-read-the-session-repo.md`).
 
 ## Mod dev loop
 
