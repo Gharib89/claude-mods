@@ -64,6 +64,7 @@ function host(on: On, { remote = 'git@github.com:acme/widgets.git', issues = BAC
   const calls: string[][] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
+  const panes = { isOpen: true }
   on('process.run', async (_$, e, next) => {
     calls.push([...e.argv])
     const [cmd, sub, ...rest] = e.argv
@@ -83,14 +84,16 @@ function host(on: On, { remote = 'git@github.com:acme/widgets.git', issues = BAC
     return ok(JSON.stringify([API[path] ?? []]))
   })
   on('ui.open', async () => ({ value: { isPlaced: true } }))
-  on('ui.panes', async () => ({ value: [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] }))
+  on('ui.panes', async () => ({
+    value: panes.isOpen ? [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] : [],
+  }))
   on('prompt.read', async () => ({ value: { text: '', cursor: 0 } }))
   on('ui.toast', async () => ({ value: undefined }))
   on('prompt.fill', async (_$, e) => {
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock }
+  return { calls, filled, clock, panes }
 }
 
 const open = ($: Engine) =>
@@ -107,7 +110,7 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 1 stale' })).toBeDefined()
     expect(await ui.find({ text: '██░░░░░░ 1/4' })).toBeDefined()
     expect(await ui.find({ text: /✓ 1 done/ })).toBeDefined()
-    expect(await ui.find({ text: 'blocked by #24' })).toBeDefined()
+    expect(await ui.find({ text: /^blocked by #24$/ })).toBeDefined()
     expect(await ui.find({ text: 'in PR #31' })).toBeDefined()
     expect(await ui.find({ text: 'claimed (ann)' })).toBeDefined()
     expect(await ui.find({ text: 'yours' })).toBeDefined()
@@ -194,7 +197,7 @@ for (const [name, setup, line] of [
 }
 
 test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, and every 120 s', async ($, on) => {
-  const { calls, clock } = host(on)
+  const { calls, clock, panes } = host(on)
   on('tool.call', async () => ({ result: '' }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   const commands: unknown[] = []
@@ -220,5 +223,12 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   expect(reads()).toBe(3)
 
   await clock.advance(120_000)
+  expect(reads()).toBe(4)
+
+  // Closed, the pane reads nothing: neither on the timer nor after a gh call.
+  panes.isOpen = false
+  await clock.advance(120_000)
+  await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
+  await clock.settle()
   expect(reads()).toBe(4)
 })
