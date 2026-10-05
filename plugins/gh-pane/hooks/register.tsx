@@ -27,6 +27,7 @@ const configOf = (o: PluginOptions) => ({
   shipCommand: String(o.shipCommand),
   triageCommand: String(o.triageCommand),
   releaseRequest: String(o.releaseRequest),
+  buttonLabel: String(o.buttonLabel),
 })
 
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
@@ -37,11 +38,13 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 let reads = 0
 // The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
 // redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
-// that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear.
-let kept: Snapshot | null = null
+// that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
+// and draws only in the folder it was read in: one process may host more than one session.
+let kept: { cwd: string; view: Snapshot } | null = null
 
 async function refresh($: EngineInterface, config: Config) {
   const ticket = ++reads
+  const cwd = await $.session.cwd()
   const run = async (argv: string[]) => {
     const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
       throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
@@ -52,12 +55,12 @@ async function refresh($: EngineInterface, config: Config) {
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
   if (ticket !== reads) return
-  kept = next
+  kept = { cwd, view: next }
   await update($, snapshot, () => next)
 }
 
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
-// `$.ui.panes()`, which no redraw follows, so show, hide and the ui.close hook each invalidate it.
+// `$.ui.panes()`, which no redraw follows (2.1.289), so show, hide and the ui.close hook each invalidate it.
 async function show($: EngineInterface, config: Config) {
   const opened = await $.ui.open({ id: PANE, title: 'gh-pane' })
   $.ui.invalidate('ui.render')
@@ -138,7 +141,8 @@ export const register: Register = (on, options) => {
     return closed
   })
 
-  // One button above the prompt that shows or hides the pane; whatever another plugin draws there stays above it.
+  // One button above the prompt that shows or hides the pane, dim while it is hidden; whatever another plugin draws
+  // there stays above it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
@@ -148,7 +152,12 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         {below}
-        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
+        <Button
+          key="toggle"
+          plain
+          label={config.buttonLabel}
+          dimColor={!shown}
+          onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
         />
       </Box>
     )
@@ -165,7 +174,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
-    const view = (await read($, snapshot)) ?? kept
+    const view = (await read($, snapshot)) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     if ('error' in view) return <Text color="red">{cut(view.error, room)}</Text>
