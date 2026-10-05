@@ -1,10 +1,11 @@
-// gh-pane: `/gh-pane` docks a pane of the session repo's open issues and PRs in run order. Its buttons fill the
-// prompt with the next command and never send it: the person reads it and presses Enter.
+// gh-pane: `/gh-pane`, or the band's button above the prompt, docks a pane of the session repo's open issues and PRs
+// in run order. Its buttons fill the prompt with the next command and never send it: the person reads it and presses
+// Enter.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Issue } from '../types'
+import type { Issue, Snapshot } from '../types'
 import { readBacklog } from './github'
 import { fill, runLine } from './rules'
 
@@ -34,6 +35,9 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 // Reads overlap (a timer, a gh call, the command): only the latest one started may land.
 let reads = 0
+// The last snapshot landed. A /clear empties `$.state` while the pane stays up and fires no hook a mod could re-read
+// from (seen on 2.1.289); this module variable outlives it, so the pane draws it until the next read lands.
+let kept: Snapshot | null = null
 
 async function refresh($: EngineInterface, config: Config) {
   const ticket = ++reads
@@ -46,7 +50,18 @@ async function refresh($: EngineInterface, config: Config) {
   }
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  if (ticket === reads) await update($, snapshot, () => next)
+  if (ticket !== reads) return
+  kept = next
+  await update($, snapshot, () => next)
+}
+
+// Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
+// `$.ui.panes()`, which no redraw follows, so every open and close invalidates it.
+async function show($: EngineInterface, config: Config) {
+  const opened = await $.ui.open({ id: PANE, title: 'GitHub' })
+  $.ui.invalidate('ui.render')
+  await refresh($, config)
+  return opened
 }
 
 async function isOpen($: EngineInterface) {
@@ -104,9 +119,35 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'gh-pane' }, async $ => {
-    const opened = await $.ui.open({ id: PANE, title: 'GitHub' })
-    await refresh($, config)
+    const opened = await show($, config)
     return { text: opened.isPlaced ? 'gh-pane opened.' : `gh-pane is waiting: ${opened.reason}` }
+  })
+
+  // Closed by the person's close mark or an unload.
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const closed = await next(e)
+    $.ui.invalidate('ui.render')
+    return closed
+  })
+
+  // One button above the prompt that shows or hides the pane; whatever another plugin draws there stays above it.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const below = await next(e)
+    if (e.props.hasSurvey) return below
+    const { Box, Button }: E = $.ui.resolve(e)
+    const shown = await isOpen($)
+    const toggle = async () => {
+      if (!shown) return void (await show($, config))
+      // The mod's own $.ui.close skips its own ui.close hook (seen on 2.1.289), so a hide invalidates itself.
+      await $.ui.close({ id: PANE })
+      $.ui.invalidate('ui.render')
+    }
+    return (
+      <Box flexDirection="column">
+        {below}
+        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={toggle} />
+      </Box>
+    )
   })
 
   // A gh call or a push moves issues and PRs: re-read once it has run. Each word counts only where a command starts
@@ -120,7 +161,7 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
-    const view = await read($, snapshot)
+    const view = (await read($, snapshot)) ?? kept
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     if ('error' in view) return <Text color="red">{cut(view.error, room)}</Text>

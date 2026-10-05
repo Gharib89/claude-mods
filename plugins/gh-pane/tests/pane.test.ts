@@ -109,7 +109,20 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
     if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([issues]))
     return ok(JSON.stringify([API[path] ?? []]))
   })
-  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  const opened: string[] = []
+  const closed: string[] = []
+  on('ui.open', async (_$, e) => {
+    opened.push(e.id)
+    panes.isOpen = true
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', async (_$, e) => {
+    closed.push(e.id)
+    panes.isOpen = false
+    return { value: undefined }
+  })
+  // Nothing else draws above the prompt.
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Box' as const }))
   // Broken, nothing beneath answers, so $.ui.panes rejects.
   on('ui.panes', async (_$, e, next) =>
     panes.isBroken
@@ -125,7 +138,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock, panes, repo, toasts }
+  return { calls, filled, clock, panes, repo, toasts, opened, closed }
 }
 
 const open = ($: Engine) =>
@@ -362,4 +375,43 @@ test('a newer read wins over an older one that answers after it', async ($, on) 
   await clock.settle()
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
+})
+
+const BAND = { plugin: 'gh-pane', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+} as const
+
+test('the band above the prompt shows the pane and hides it', async ($, on) => {
+  const { panes, opened, closed } = host(on)
+  panes.isOpen = false
+  for (const surface of ['terminal', 'desktop'] as const) {
+    opened.length = 0
+    closed.length = 0
+    const band = await $.ui.mount({ ...BAND, surface })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Open gh-pane')
+    await band.press({ key: 'toggle' })
+    expect(opened).toEqual(['gh-pane'])
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Hide gh-pane')
+    await band.press({ key: 'toggle' })
+    expect(closed).toEqual(['gh-pane'])
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Open gh-pane')
+    await band.unmount()
+  }
+})
+
+test('the band yields to a survey', async ($, on) => {
+  host(on)
+  const band = await $.ui.mount({ ...BAND, props: { ...BAND.props, hasSurvey: true }, surface: 'terminal' })
+  expect(await band.find({ key: 'toggle' })).toBeUndefined()
+})
+
+test('after a /clear empties the session state, the open pane still draws the last read', async ($, on) => {
+  host(on)
+  // What a /clear does to the mod on 2.1.289: the session state starts over, the pane stays up, no hook fires.
+  const session = { isCleared: false }
+  on('state.get', (_$, e, next) => (session.isCleared ? { value: { value: undefined, version: 0 } } : next(e)))
+  await open($)
+  session.isCleared = true
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: /Reading the repo/ })).toBeUndefined()
+  expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
 })

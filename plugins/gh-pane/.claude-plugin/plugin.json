@@ -1,6 +1,6 @@
 {
   "name": "gh-pane",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",
