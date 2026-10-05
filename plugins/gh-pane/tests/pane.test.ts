@@ -8,7 +8,7 @@ const PANE = {
   plugin: 'gh-pane',
   component: 'Pane',
   requestId: 'gh-pane',
-  props: { title: 'GitHub', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  props: { title: 'gh-pane', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
 type Raw = Record<string, unknown>
@@ -112,7 +112,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
   const opened: string[] = []
   const closed: string[] = []
   on('ui.open', async (_$, e) => {
-    opened.push(e.id)
+    opened.push(`${e.id} titled ${e.title}`)
     panes.isOpen = true
     return { value: { isPlaced: true } }
   })
@@ -127,7 +127,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
   on('ui.panes', async (_$, e, next) =>
     panes.isBroken
       ? next(e)
-      : { value: panes.isOpen ? [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] : [] },
+      : { value: panes.isOpen ? [{ id: 'gh-pane', title: 'gh-pane', isShown: true, isFocused: false, isPlaced: true }] : [] },
   )
   on('prompt.read', async () => ({ value: { text: '', cursor: 0 } }))
   on('ui.toast', async (_$, e) => {
@@ -392,7 +392,7 @@ test('the band above the prompt shows the pane and hides it', async ($, on) => {
     const band = await $.ui.mount({ ...BAND, surface })
     expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Open gh-pane')
     await band.press({ key: 'toggle' })
-    expect(opened).toEqual(['gh-pane'])
+    expect(opened).toEqual(['gh-pane titled gh-pane'])
     expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Hide gh-pane')
     await band.press({ key: 'toggle' })
     expect(closed).toEqual(['gh-pane'])

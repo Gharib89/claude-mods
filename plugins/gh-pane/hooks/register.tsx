@@ -59,7 +59,7 @@ async function refresh($: EngineInterface, config: Config) {
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
 // `$.ui.panes()`, which no redraw follows, so show, hide and the ui.close hook each invalidate it.
 async function show($: EngineInterface, config: Config) {
-  const opened = await $.ui.open({ id: PANE, title: 'GitHub' })
+  const opened = await $.ui.open({ id: PANE, title: 'gh-pane' })
   $.ui.invalidate('ui.render')
   await refresh($, config)
   return opened
