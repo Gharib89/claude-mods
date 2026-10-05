@@ -8,7 +8,7 @@ const PANE = {
   plugin: 'gh-pane',
   component: 'Pane',
   requestId: 'gh-pane',
-  props: { title: 'GitHub', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  props: { title: 'gh-pane', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 
 type Raw = Record<string, unknown>
@@ -74,10 +74,10 @@ const PORCELAIN = [
   'worktree /w/wt/9\nHEAD 3\nbranch refs/heads/feat/9',
 ].join('\n\n')
 
-type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean }
+type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean; openFails?: string }
 
 /** Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails. */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails }: Host = {}) {
   const calls: string[][] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
@@ -109,12 +109,28 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
     if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([issues]))
     return ok(JSON.stringify([API[path] ?? []]))
   })
-  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  const opened: string[] = []
+  const closed: string[] = []
+  on('ui.open', async (_$, e) => {
+    if (openFails !== undefined) return { deny: openFails }
+    opened.push(`${e.id} titled ${e.title}`)
+    panes.isOpen = true
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', async (_$, e) => {
+    closed.push(e.id)
+    panes.isOpen = false
+    return { value: undefined }
+  })
+  const folder = { cwd: '/w/widgets' }
+  on('session.cwd', () => ({ value: folder.cwd }))
+  // Nothing else draws above the prompt.
+  on('ui.render', { component: 'AbovePrompt' }, () => ({ type: 'Box' as const }))
   // Broken, nothing beneath answers, so $.ui.panes rejects.
   on('ui.panes', async (_$, e, next) =>
     panes.isBroken
       ? next(e)
-      : { value: panes.isOpen ? [{ id: 'gh-pane', title: 'GitHub', isShown: true, isFocused: false, isPlaced: true }] : [] },
+      : { value: panes.isOpen ? [{ id: 'gh-pane', title: 'gh-pane', isShown: true, isFocused: false, isPlaced: true }] : [] },
   )
   on('prompt.read', async () => ({ value: { text: '', cursor: 0 } }))
   on('ui.toast', async (_$, e) => {
@@ -125,7 +141,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock, panes, repo, toasts }
+  return { calls, filled, clock, panes, repo, toasts, opened, closed, folder }
 }
 
 const open = ($: Engine) =>
@@ -362,4 +378,81 @@ test('a newer read wins over an older one that answers after it', async ($, on) 
   await clock.settle()
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
+})
+
+// The default icon: the GitHub mark of a Nerd Font.
+const LOGO = '\uf408'
+
+const BAND = {
+  plugin: 'gh-pane',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+} as const
+
+test('the band above the prompt shows the pane and hides it', async ($, on) => {
+  const { panes, opened, closed } = host(on)
+  panes.isOpen = false
+  for (const surface of ['terminal', 'desktop'] as const) {
+    opened.length = 0
+    closed.length = 0
+    const band = await $.ui.mount({ ...BAND, surface })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
+    await band.press({ key: 'toggle' })
+    expect(opened).toEqual(['gh-pane titled gh-pane'])
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Hide gh-pane ${LOGO}`)
+    await band.press({ key: 'toggle' })
+    expect(closed).toEqual(['gh-pane'])
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
+    await band.unmount()
+  }
+})
+
+test('with the pane list unreadable, the band still draws its button', async ($, on) => {
+  const { panes } = host(on)
+  panes.isBroken = true
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
+})
+
+test('a press that fails says so in a toast', async ($, on) => {
+  const { panes, toasts } = host(on, { openFails: 'no surface' })
+  panes.isOpen = false
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'toggle' })
+  expect(toasts).toEqual([expect.stringMatching(/^gh-pane: .*no surface/)])
+})
+
+test('the band yields to a survey', async ($, on) => {
+  host(on)
+  for (const [hasSurvey, isDrawn] of [[false, true], [true, false]] as const) {
+    const band = await $.ui.mount({ ...BAND, props: { ...BAND.props, hasSurvey }, surface: 'terminal' })
+    expect([hasSurvey, (await band.find({ key: 'toggle' })) !== undefined]).toEqual([hasSurvey, isDrawn])
+    await band.unmount()
+  }
+})
+
+for (const [buttonIcon, label] of [['G', 'Open gh-pane G'], ['', 'Open gh-pane']] as const) {
+  test(`the band button follows its userConfig icon ${JSON.stringify(buttonIcon)}`, { options: { buttonIcon } }, async ($, on) => {
+    host(on).panes.isOpen = false
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(label)
+  })
+}
+
+test('after a /clear empties the session state, the open pane still draws the last read of its folder', async ($, on) => {
+  const { folder } = host(on)
+  // What a /clear does to the mod on 2.1.289: the session state starts over, the pane stays up, no hook fires.
+  const session = { isCleared: false }
+  on('state.get', (_$, e, next) => (session.isCleared ? { value: { value: undefined, version: 0 } } : next(e)))
+  await open($)
+  session.isCleared = true
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: /Reading the repo/ })).toBeUndefined()
+  expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
+  await ui.unmount()
+  // A session in another folder never draws this one's read.
+  folder.cwd = '/w/other'
+  const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await other.find({ text: /Reading the repo/ })).toBeDefined()
+  expect(await other.find({ text: /PR cap/ })).toBeUndefined()
 })
