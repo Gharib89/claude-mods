@@ -35,8 +35,9 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 
 // Reads overlap (a timer, a gh call, the command): only the latest one started may land.
 let reads = 0
-// The last snapshot landed. A /clear empties `$.state` while the pane stays up and fires no hook a mod could re-read
-// from (seen on 2.1.289); this module variable outlives it, so the pane draws it until the next read lands.
+// The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
+// redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
+// that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear.
 let kept: Snapshot | null = null
 
 async function refresh($: EngineInterface, config: Config) {
@@ -56,12 +57,19 @@ async function refresh($: EngineInterface, config: Config) {
 }
 
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
-// `$.ui.panes()`, which no redraw follows, so every open and close invalidates it.
+// `$.ui.panes()`, which no redraw follows, so show, hide and the ui.close hook each invalidate it.
 async function show($: EngineInterface, config: Config) {
   const opened = await $.ui.open({ id: PANE, title: 'GitHub' })
   $.ui.invalidate('ui.render')
   await refresh($, config)
   return opened
+}
+
+// The mod's own $.ui.close skips its own ui.close hook (seen in `claude plugin test` on 2.1.289), so hide
+// invalidates the band itself.
+async function hide($: EngineInterface) {
+  await $.ui.close({ id: PANE })
+  $.ui.invalidate('ui.render')
 }
 
 async function isOpen($: EngineInterface) {
@@ -123,7 +131,7 @@ export const register: Register = (on, options) => {
     return { text: opened.isPlaced ? 'gh-pane opened.' : `gh-pane is waiting: ${opened.reason}` }
   })
 
-  // Closed by the person's close mark or an unload.
+  // Closed by the person's close mark; an unload runs none of the opener's hooks.
   on('ui.close', { id: PANE }, async ($, e, next) => {
     const closed = await next(e)
     $.ui.invalidate('ui.render')
@@ -136,16 +144,10 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey) return below
     const { Box, Button }: E = $.ui.resolve(e)
     const shown = await isOpen($)
-    const toggle = async () => {
-      if (!shown) return void (await show($, config))
-      // The mod's own $.ui.close skips its own ui.close hook (seen on 2.1.289), so a hide invalidates itself.
-      await $.ui.close({ id: PANE })
-      $.ui.invalidate('ui.render')
-    }
     return (
       <Box flexDirection="column">
         {below}
-        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={toggle} />
+        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={() => (shown ? hide($) : show($, config))} />
       </Box>
     )
   })

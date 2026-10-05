@@ -377,7 +377,10 @@ test('a newer read wins over an older one that answers after it', async ($, on) 
   expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
 })
 
-const BAND = { plugin: 'gh-pane', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+const BAND = {
+  plugin: 'gh-pane',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 90, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
 test('the band above the prompt shows the pane and hides it', async ($, on) => {
