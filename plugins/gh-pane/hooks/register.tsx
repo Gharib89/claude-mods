@@ -143,11 +143,13 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
     const { Box, Button }: E = $.ui.resolve(e)
-    const shown = await isOpen($)
+    // An unreadable pane list reads as closed: a throw here would take the band of every plugin beneath with it.
+    const shown = await isOpen($).catch(() => false)
     return (
       <Box flexDirection="column">
         {below}
-        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={() => (shown ? hide($) : show($, config))} />
+        <Button key="toggle" plain label={shown ? 'Hide gh-pane' : 'Open gh-pane'} onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
+        />
       </Box>
     )
   })

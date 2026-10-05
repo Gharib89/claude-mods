@@ -74,10 +74,10 @@ const PORCELAIN = [
   'worktree /w/wt/9\nHEAD 3\nbranch refs/heads/feat/9',
 ].join('\n\n')
 
-type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean }
+type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean; openFails?: string }
 
 /** Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails. */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails }: Host = {}) {
   const calls: string[][] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
@@ -112,6 +112,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub }: Hos
   const opened: string[] = []
   const closed: string[] = []
   on('ui.open', async (_$, e) => {
+    if (openFails !== undefined) return { deny: openFails }
     opened.push(`${e.id} titled ${e.title}`)
     panes.isOpen = true
     return { value: { isPlaced: true } }
@@ -399,6 +400,21 @@ test('the band above the prompt shows the pane and hides it', async ($, on) => {
     expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Open gh-pane')
     await band.unmount()
   }
+})
+
+test('with the pane list unreadable, the band still draws its button', async ($, on) => {
+  const { panes } = host(on)
+  panes.isBroken = true
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ key: 'toggle' }))?.props.label).toBe('Open gh-pane')
+})
+
+test('a press that fails says so in a toast', async ($, on) => {
+  const { panes, toasts } = host(on, { openFails: 'no surface' })
+  panes.isOpen = false
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'toggle' })
+  expect(toasts).toEqual([expect.stringMatching(/^gh-pane: .*no surface/)])
 })
 
 test('the band yields to a survey', async ($, on) => {
