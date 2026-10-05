@@ -16,6 +16,6 @@
     "shipCommand": { "type": "string", "title": "Ship command", "description": "What a ready issue's ship button fills; {n} is the issue number.", "default": "/ship {n}" },
     "triageCommand": { "type": "string", "title": "Triage command", "description": "What triage and triage all fill; {issues} is one number (12) or a list (#12, #13 one by one).", "default": "/triage {issues}" },
     "releaseRequest": { "type": "string", "title": "Release request", "description": "What a stale claim's release button fills; {n} is the issue number, {user} its assignees.", "default": "Release the ship claim on #{n}: unassign {user} and comment that the claim went stale with no PR." },
-    "buttonLabel": { "type": "string", "title": "Band button", "description": "The button above the prompt that opens and hides the pane, drawn dim while it is hidden. The default is the GitHub mark of a Nerd Font (U+F408); set text such as gh-pane where the terminal's font has no Nerd Font glyphs.", "default": "\uf408" }
+    "buttonIcon": { "type": "string", "title": "Band button icon", "description": "What follows Open gh-pane or Hide gh-pane on the button above the prompt. The default is the GitHub mark of a Nerd Font (U+F408); leave it empty where the terminal's font has no Nerd Font glyphs.", "default": "\uf408" }
   }
 }

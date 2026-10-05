@@ -27,7 +27,7 @@ const configOf = (o: PluginOptions) => ({
   shipCommand: String(o.shipCommand),
   triageCommand: String(o.triageCommand),
   releaseRequest: String(o.releaseRequest),
-  buttonLabel: String(o.buttonLabel),
+  buttonIcon: String(o.buttonIcon),
 })
 
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
@@ -141,8 +141,7 @@ export const register: Register = (on, options) => {
     return closed
   })
 
-  // One button above the prompt that shows or hides the pane, dim while it is hidden; whatever another plugin draws
-  // there stays above it.
+  // One button above the prompt that shows or hides the pane; whatever another plugin draws there stays above it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
@@ -155,8 +154,7 @@ export const register: Register = (on, options) => {
         <Button
           key="toggle"
           plain
-          label={config.buttonLabel}
-          dimColor={!shown}
+          label={`${shown ? 'Hide' : 'Open'} gh-pane ${config.buttonIcon}`.trim()}
           onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
         />
       </Box>

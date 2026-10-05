@@ -380,7 +380,7 @@ test('a newer read wins over an older one that answers after it', async ($, on) 
   expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
 })
 
-// The default label: the GitHub mark of a Nerd Font.
+// The default icon: the GitHub mark of a Nerd Font.
 const LOGO = '\uf408'
 
 const BAND = {
@@ -396,13 +396,13 @@ test('the band above the prompt shows the pane and hides it', async ($, on) => {
     opened.length = 0
     closed.length = 0
     const band = await $.ui.mount({ ...BAND, surface })
-    expect((await band.find({ key: 'toggle' }))?.props).toMatchObject({ label: LOGO, dimColor: true })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
     await band.press({ key: 'toggle' })
     expect(opened).toEqual(['gh-pane titled gh-pane'])
-    expect((await band.find({ key: 'toggle' }))?.props).toMatchObject({ label: LOGO, dimColor: false })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Hide gh-pane ${LOGO}`)
     await band.press({ key: 'toggle' })
     expect(closed).toEqual(['gh-pane'])
-    expect((await band.find({ key: 'toggle' }))?.props).toMatchObject({ label: LOGO, dimColor: true })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
     await band.unmount()
   }
 })
@@ -411,7 +411,7 @@ test('with the pane list unreadable, the band still draws its button', async ($,
   const { panes } = host(on)
   panes.isBroken = true
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.find({ key: 'toggle' }))?.props).toMatchObject({ label: LOGO, dimColor: true })
+  expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
 })
 
 test('a press that fails says so in a toast', async ($, on) => {
@@ -431,11 +431,13 @@ test('the band yields to a survey', async ($, on) => {
   }
 })
 
-test('the band button follows its userConfig label', { options: { buttonLabel: 'gh-pane' } }, async ($, on) => {
-  host(on)
-  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  expect((await band.find({ key: 'toggle' }))?.props.label).toBe('gh-pane')
-})
+for (const [buttonIcon, label] of [['G', 'Open gh-pane G'], ['', 'Open gh-pane']] as const) {
+  test(`the band button follows its userConfig icon ${JSON.stringify(buttonIcon)}`, { options: { buttonIcon } }, async ($, on) => {
+    host(on).panes.isOpen = false
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    expect((await band.find({ key: 'toggle' }))?.props.label).toBe(label)
+  })
+}
 
 test('after a /clear empties the session state, the open pane still draws the last read of its folder', async ($, on) => {
   const { folder } = host(on)
