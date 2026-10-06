@@ -66,6 +66,7 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/7/sub_issues?per_page=100': [linked(10, 'open'), linked(11, 'open')],
   'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(8, 'open'), linked(9, 'open')],
   'repos/acme/widgets/issues/9/dependencies/blocked_by': [linked(6, 'open')],
+  'repos/acme/widgets/issues/3/dependencies/blocked_by': [linked(9, 'open')],
 }
 
 const PORCELAIN = [

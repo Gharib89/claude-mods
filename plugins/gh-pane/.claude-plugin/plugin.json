@@ -1,7 +1,7 @@
 {
   "name": "gh-pane",
   "version": "0.5.0",
-  "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command, and two at the merge gate that send it.",
+  "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command, plus two for this session's merge gate: send the merge reply, then clear and run the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",
   "userConfig": {
