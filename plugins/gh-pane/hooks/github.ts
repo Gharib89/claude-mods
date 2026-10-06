@@ -73,3 +73,8 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   )
   return { repo, issues, prs: prs.length, fetchedAt: now }
 }
+
+/** Whether PR `n` of the session repo is merged. */
+export async function isMerged(run: Runner, n: number): Promise<boolean> {
+  return (await run(['gh', 'api', `repos/{owner}/{repo}/pulls/${n}`, '--jq', '.merged'])).trim() === 'true'
+}

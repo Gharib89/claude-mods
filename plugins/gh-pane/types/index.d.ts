@@ -27,8 +27,16 @@ export type Snapshot =
   | { repo: string; issues: Issue[]; prs: number; fetchedAt: string }
   | { error: string }
 
+/** Where this session stands at a ship run's merge gate: the PR it names and what the band offers. */
+export type Gate = {
+  pr: number
+  phase: 'gate' | 'merging' | 'merged'
+  /** Once merged: the command the next button runs after a /clear, the first ready row's. None when nothing is ready or its command is no slash command. */
+  next?: { text: string; command: string; args: string }
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'gh-pane': { snapshot: Snapshot | null }
+    'gh-pane': { snapshot: Snapshot | null; gate: Gate | null }
   }
 }

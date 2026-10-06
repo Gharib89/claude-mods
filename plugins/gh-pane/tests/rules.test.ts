@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { closesOf, fill, runLine, worktreeIssue } from '../hooks/rules'
+import { closesOf, commandOf, fill, gatePr, runLine, worktreeIssue } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
@@ -75,4 +75,29 @@ test('a template fills each placeholder it has a value for, and leaves the rest 
   // A value lands literally, `$&` included, and an inherited key is not a value.
   expect(fill('free {user}', { user: '$& and $1' })).toBe('free $& and $1')
   expect(fill('{constructor} {toString}', {})).toBe('{constructor} {toString}')
+})
+
+test('a gate answer names its PR by the first /pull/N, and only with the gate text', () => {
+  const text = 'Reply "merge"'
+  expect(gatePr(`${text}\nhttps://github.com/a/b/pull/42 and https://github.com/a/b/pull/7`, text)).toBe(42)
+  expect(gatePr('https://github.com/a/b/pull/42', text)).toBeUndefined()
+  expect(gatePr(text, text)).toBeUndefined()
+  // Not a PR link: an issue, or a pull with no number.
+  expect(gatePr(`${text} https://github.com/a/b/issues/42 and /pull/ and /pull/x`, text)).toBeUndefined()
+  // The text is no pattern: `.` and quotes match themselves.
+  expect(gatePr('Reply merge /pull/3', 'Reply "merge"')).toBeUndefined()
+  expect(gatePr('Say a.c /pull/3', 'a.c')).toBe(3)
+  expect(gatePr('Say abc /pull/3', 'a.c')).toBeUndefined()
+  // The number ends at its digits, and `/pulls/7` is no PR path.
+  expect(gatePr(`${text} /pull/42abc`, text)).toBe(42)
+  expect(gatePr(`${text} /pulls/7`, text)).toBeUndefined()
+})
+
+test('a slash command splits into its name and args, and other text is no command', () => {
+  expect(commandOf('/ship 8')).toEqual({ command: 'ship', args: '8' })
+  expect(commandOf('/wayfinder 4 7')).toEqual({ command: 'wayfinder', args: '4 7' })
+  expect(commandOf('  /triage #1, #2 one by one  ')).toEqual({ command: 'triage', args: '#1, #2 one by one' })
+  expect(commandOf('/clear')).toEqual({ command: 'clear', args: '' })
+  expect(commandOf('/plan:go a\nb')).toEqual({ command: 'plan:go', args: 'a\nb' })
+  for (const text of ['ship it 7', '', '/', '/ ship', ' / ']) expect([text, commandOf(text)]).toEqual([text, undefined])
 })

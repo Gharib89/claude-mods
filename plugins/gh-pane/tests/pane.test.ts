@@ -66,6 +66,7 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/7/sub_issues?per_page=100': [linked(10, 'open'), linked(11, 'open')],
   'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(8, 'open'), linked(9, 'open')],
   'repos/acme/widgets/issues/9/dependencies/blocked_by': [linked(6, 'open')],
+  'repos/acme/widgets/issues/3/dependencies/blocked_by': [linked(9, 'open')],
 }
 
 const PORCELAIN = [
@@ -74,11 +75,20 @@ const PORCELAIN = [
   'worktree /w/wt/9\nHEAD 3\nbranch refs/heads/feat/9',
 ].join('\n\n')
 
-type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean; openFails?: string }
+type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean; openFails?: string; isSubmitBroken?: boolean; pullFails?: string }
 
-/** Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails. */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails }: Host = {}) {
+/**
+ * Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails.
+ * `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent` and `ran` are the prompts and
+ * the commands the mod submitted or ran, `typed` the prompts a person typed.
+ */
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails }: Host = {}) {
   const calls: string[][] = []
+  const fixture = { issues }
+  const pulls: Record<number, boolean> = {}
+  const sent: { text: string; asUser: boolean }[] = []
+  const typed: string[] = []
+  const ran: { command: string; args: string }[] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
   const panes = { isOpen: true, isBroken: false }
@@ -100,13 +110,15 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
         ? fail('unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitHub host.\n')
         : ok('acme/widgets\n')
     }
+    const pull = /^repos\/\{owner\}\/\{repo\}\/pulls\/(\d+)$/.exec(rest[0] ?? '')
+    if (pull) return pullFails === undefined ? ok(`${pulls[Number(pull[1])] ?? false}\n`) : fail(pullFails)
     const path = rest.at(-1)!
     const events = /issues\/(\d+)\/events/.exec(path)
     if (events) {
-      const hours = issues.find(i => i.number === Number(events[1]))?.claimedHoursAgo as number
+      const hours = fixture.issues.find(i => i.number === Number(events[1]))?.claimedHoursAgo as number
       return ok(JSON.stringify([[{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }]]))
     }
-    if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([issues]))
+    if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([fixture.issues]))
     return ok(JSON.stringify([API[path] ?? []]))
   })
   const opened: string[] = []
@@ -141,7 +153,20 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
     filled.push(e.text)
     return { isFilled: true, box: { text: e.text, cursor: e.text.length } }
   })
-  return { calls, filled, clock, panes, repo, toasts, opened, closed, folder }
+  // The bottom of `prompt.submit` and `command.run`: a person's typed prompt, the mod's own, and the commands it runs.
+  // Broken, nothing beneath answers, so `$.prompt.submit` rejects as it does when the engine cannot send.
+  if (!isSubmitBroken) on('prompt.submit', async (_$, e) => {
+    if (e.origin.kind === 'plugin') sent.push({ text: e.text, asUser: e.origin.asUser === true })
+    else typed.push(e.text)
+    return { text: e.text }
+  })
+  on('command.run', async (_$, e) => {
+    ran.push({ command: e.command, args: e.args })
+    return { text: '' }
+  })
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
+  return { calls, filled, clock, panes, repo, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
 }
 
 const open = ($: Engine) =>
@@ -474,4 +499,276 @@ test('after a /clear empties the session state, the open pane still draws the la
   const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await other.find({ text: /Reading the repo/ })).toBeDefined()
   expect(await other.find({ text: /PR cap/ })).toBeUndefined()
+})
+
+const GATE = 'Ready to merge. Reply "merge" to squash-merge, close the issue, and clean up.\nPR: https://github.com/acme/widgets/pull/42'
+const MERGED = 'Merged #42.'
+
+const answer = ($: Engine, text: string, agentId?: string) =>
+  $.turn.complete({ answer: text, durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer', ...(agentId === undefined ? {} : { agentId }) })
+const type = ($: Engine, text: string) => $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+
+test('a main-loop gate answer shows the merge button, and pressing it sends the reply as the user', async ($, on) => {
+  const { sent } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+
+  // A subagent's answer is no gate of this session.
+  await answer($, GATE, 'agent-1')
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+
+  await answer($, GATE)
+  const button = await band.find({ key: 'merge' })
+  expect(button?.props.label).toBe('merge PR #42')
+  expect(button?.props.hotkey).toBe('m')
+  // The pane's toggle stays beside it.
+  expect(await band.find({ key: 'toggle' })).toBeDefined()
+
+  await band.press({ key: 'merge' })
+  expect(sent).toEqual([{ text: 'merge', asUser: true }])
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  expect(await band.find({ text: 'merging PR #42…' })).toBeDefined()
+})
+
+test('a gate answer with no PR link, or without the gate text, is no gate', async ($, on) => {
+  host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, 'Ready to merge. Reply "merge" to squash-merge.')
+  await answer($, 'Merge it with a link: https://github.com/acme/widgets/pull/42')
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+})
+
+test('a typed reply equal to the word reaches merging; any other reply hides the button until the gate returns', async ($, on) => {
+  host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  await answer($, GATE)
+  await type($, 'merge')
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  expect(await band.find({ text: 'merging PR #42…' })).toBeDefined()
+
+  await answer($, GATE)
+  await type($, 'wait, one more look')
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+
+  await answer($, GATE)
+  expect(await band.find({ key: 'merge' })).toBeDefined()
+})
+
+test('a merged PR shows the next button for the first ready row, and pressing it clears, then runs the command', async ($, on) => {
+  const { calls, pulls, ran, fixture, panes, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, GATE)
+  await type($, 'merge')
+  // Pane closed: the next command still comes from a fresh read, which sees #8 become ready since the gate.
+  panes.isOpen = false
+  fixture.issues = [issue(9, ['needs-triage']), issue(8, ['ready-for-agent']), issue(7, ['ready-for-agent'])]
+  pulls[42] = true
+  await answer($, MERGED)
+  await clock.settle()
+
+  const next = await band.find({ key: 'next' })
+  expect(next?.props.label).toBe('clear + /ship 8')
+  expect(next?.props.hotkey).toBe('n')
+  expect(calls).toContainEqual(['gh', 'api', 'repos/{owner}/{repo}/pulls/42', '--jq', '.merged'])
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+
+  await band.press({ key: 'next' })
+  expect(ran).toEqual([{ command: 'clear', args: '' }, { command: 'ship', args: '8' }])
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+})
+
+test('the next button follows pane order: a lone issue waiting on triage waits below the trees', async ($, on) => {
+  const { pulls, ran, clock } = host(on, {
+    issues: [issue(9, ['needs-triage', 'ready-for-agent']), issue(8, ['ready-for-agent'])],
+  })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect((await band.find({ key: 'next' }))?.props.label).toBe('clear + /ship 8')
+  await band.press({ key: 'next' })
+  expect(ran.at(-1)).toEqual({ command: 'ship', args: '8' })
+})
+
+test('the next button of a map ticket runs the map command', async ($, on) => {
+  const { pulls, ran, clock } = host(on, {
+    issues: [
+      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 4, completed: 0 } }),
+      issue(6, ['wayfinder:research']),
+      issue(7, ['wayfinder:grilling']),
+      issue(8, ['wayfinder:grilling']),
+      issue(9, ['wayfinder:grilling'], { issue_dependencies_summary: { blocked_by: 1 } }),
+    ],
+  })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect((await band.find({ key: 'next' }))?.props.label).toBe('clear + /wayfinder 4 6')
+  await band.press({ key: 'next' })
+  expect(ran.at(-1)).toEqual({ command: 'wayfinder', args: '4 6' })
+})
+
+test('the next button stands for the turn after the merge only', async ($, on) => {
+  const { pulls, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeDefined()
+  // A subagent's turn is no later turn of this session.
+  await answer($, 'done', 'agent-1')
+  expect(await band.find({ key: 'next' })).toBeDefined()
+  await answer($, 'Anything else?')
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+})
+
+test('a subagent turn while merging settles nothing', async ($, on) => {
+  const { pulls, clock, calls } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED, 'agent-1')
+  await clock.settle()
+  expect(await band.find({ text: 'merging PR #42…' })).toBeDefined()
+  expect(calls.filter(argv => argv.at(-2) === '--jq')).toEqual([])
+})
+
+test('a next-command read that fails says so in a toast and shows no next button', async ($, on) => {
+  const { pulls, repo, toasts, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  repo.failsAt = 1
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(toasts).toEqual(['gh-pane: gh api: gh: HTTP 401: Bad credentials'])
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+})
+
+test('a PR that did not merge, or no ready row, shows no next button', async ($, on) => {
+  const { pulls, fixture, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+
+  // A stale-base or a no: the PR read answers not merged.
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, 'stale-base: behind 2 on main')
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+
+  // Merged, but nothing is ready.
+  fixture.issues = [issue(9, ['needs-info'])]
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+})
+
+test('the session ending clears the gate', async ($, on) => {
+  host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, GATE)
+  expect(await band.find({ key: 'merge' })).toBeDefined()
+  await $.session.end({ reason: 'clear', sessionId: 's1', resume: { id: 's1' } })
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+})
+
+test('a merge reply that fails to send says so in a toast and leaves the button pressable', async ($, on) => {
+  const { toasts, sent } = host(on, { isSubmitBroken: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, GATE)
+  await band.press({ key: 'merge' })
+  expect(sent).toEqual([])
+  expect(toasts).toEqual([expect.stringMatching(/^gh-pane: .*prompt\.submit/)])
+  expect(await band.find({ key: 'merge' })).toBeDefined()
+})
+
+test('a PR read that fails says so in a toast and hides the gate', async ($, on) => {
+  const { toasts, clock } = host(on, { pullFails: 'gh: HTTP 502' })
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(toasts).toEqual([expect.stringMatching(/^gh-pane could not read PR #42: .*HTTP 502/)])
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+})
+
+for (const [name, options, request] of [
+  ['default', {}, 'Close #3: all 2 of its sub-issues are closed.'],
+  ['own words', { closeRequest: 'wrap up #{n} ({total})' }, 'wrap up #3 (2)'],
+] as const) {
+  test(`an open issue whose sub-issues are all closed reads all done, and close fills the request (${name})`, { options }, async ($, on) => {
+    const { filled } = host(on, {
+      issues: [
+        issue(3, [], { sub_issues_summary: { total: 2, completed: 2 } }),
+        issue(5, [], { sub_issues_summary: { total: 2, completed: 1 } }),
+      ],
+    })
+    await open($)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ text: 'all done' })).toBeDefined()
+    expect(await ui.find({ key: 'close-5' })).toBeUndefined()
+    await ui.press({ key: 'close-3' })
+    expect(filled).toEqual([request])
+  })
+}
+
+test('all done ranks after in PR and before blocked, claimed and ready', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(3, ['ready-for-agent'], { sub_issues_summary: { total: 1, completed: 1 }, issue_dependencies_summary: { blocked_by: 1 }, ...assigned('ann', 1) }),
+      issue(4, ['ready-for-agent'], { sub_issues_summary: { total: 1, completed: 1 } }),
+      { ...issue(31, []), pull_request: {}, html_url: 'https://github.com/acme/widgets/pull/31', body: 'Closes #4' },
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // #3 is blocked, claimed and ready, and still all done; #4 has a PR, so it reads in PR with no close button.
+  expect(await ui.find({ key: 'close-3' })).toBeDefined()
+  expect(await ui.find({ key: 'ship-3' })).toBeUndefined()
+  expect(await ui.find({ text: 'in PR #31' })).toBeDefined()
+  expect(await ui.find({ key: 'close-4' })).toBeUndefined()
+})
+
+test('a map ticket row reads ready now beside its next button, never next next', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 1, completed: 0 } }),
+      issue(7, ['wayfinder:grilling']),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'next-7' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'next' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'ready now' })).toBeDefined()
+})
+
+test('the gate and merge words follow userConfig', { options: { gateText: 'Say go', mergeReply: 'go' } }, async ($, on) => {
+  const { sent } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await answer($, GATE)
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  await answer($, 'Say go to merge https://github.com/acme/widgets/pull/9')
+  await band.press({ key: 'merge' })
+  expect(sent).toEqual([{ text: 'go', asUser: true }])
 })
