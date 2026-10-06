@@ -161,8 +161,8 @@ function nextCommand(view: Open, config: Config): string | undefined {
 
 const setGate = ($: EngineInterface, to: Gate | null) => update($, gate, () => to)
 
-// Sends the reply as the person's own words. The mod's own prompt.submit hook sees this call too (it skips only the
-// hook that calls), so the press marks the merging first and the hook finds the gate already passed.
+// Sends the reply as the person's own words. The press marks the merging before the send, so the state is right
+// whether or not the mod's own prompt.submit hook sees this call.
 async function pressMerge($: EngineInterface, config: Config, at: Gate) {
   await setGate($, { ...at, phase: 'merging' })
   try {
@@ -210,6 +210,8 @@ export const register: Register = (on, options) => {
     else {
       const at = await read($, gate)
       if (at?.phase === 'merging') void settleMerge($, config, at.pr)
+      // The next command was picked at merge time: it stands for the turn that follows the merge, no longer.
+      else if (at?.phase === 'merged') await setGate($, null)
     }
     return done
   })

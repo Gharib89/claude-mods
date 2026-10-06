@@ -14,7 +14,7 @@
     {
       "name": "gh-pane",
       "source": "./plugins/gh-pane",
-      "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command."
+      "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command, and two at the merge gate that send it."
     }
   ]
 }

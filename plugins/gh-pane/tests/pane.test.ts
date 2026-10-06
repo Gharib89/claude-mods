@@ -614,6 +614,22 @@ test('the next button of a map ticket runs the map command', async ($, on) => {
   expect(ran.at(-1)).toEqual({ command: 'wayfinder', args: '4 6' })
 })
 
+test('the next button stands for the turn after the merge only', async ($, on) => {
+  const { pulls, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeDefined()
+  // A subagent's turn is no later turn of this session.
+  await answer($, 'done', 'agent-1')
+  expect(await band.find({ key: 'next' })).toBeDefined()
+  await answer($, 'Anything else?')
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+})
+
 test('a subagent turn while merging settles nothing', async ($, on) => {
   const { pulls, clock, calls } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
