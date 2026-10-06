@@ -115,8 +115,70 @@ function stateOf(
   return { tag: 'untriaged', color: 'gray' }
 }
 
+// PROTOTYPE (wayfinder #28, throwaway): merge and next buttons for the ship loop. The band's `proto` buttons switch
+// the variant (A: a gate strip in the pane, B: buttons in the band, C: on the rows) and the mode (send: the button
+// sends; fill: it fills and Enter sends). `sim gate` fakes a gate on the first open PR; a simulated merge sends nothing.
+type Gate = { pr?: number; phase: 'gate' | 'merging' | 'merged'; isSim: boolean }
+let gate: Gate | null = null
+let variant: 'A' | 'B' | 'C' = 'A'
+let mode: 'send' | 'fill' = 'send'
+const GATE_TEXT = 'Reply "merge"'
+
+// The first row with a button that starts work, in the pane's order: a ship or a map's next.
+function nextOf(view: Snapshot | null, config: Config): { n: number; text: string; verb: string } | undefined {
+  if (view === null || 'error' in view) return undefined
+  const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
+  const mapOf = (issue: Issue): number | undefined =>
+    issue.labels.includes(config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
+  const walk = (issue: Issue): Issue[] => [issue, ...issue.children.flatMap(n => walk(byNumber.get(n)!))]
+  for (const issue of view.issues.filter(i => i.parent === undefined).flatMap(walk)) {
+    const map = mapOf(issue)
+    const state = stateOf(issue, config, map !== undefined && map !== issue.number)
+    if (state.isReady) return { n: issue.number, text: fill(config.shipCommand, { n: issue.number }), verb: 'ship' }
+    if (state.isNext) return { n: issue.number, text: fill(config.mapCommand, { map: map!, n: issue.number }), verb: 'next' }
+  }
+  return undefined
+}
+
+async function pressMerge($: EngineInterface) {
+  if (gate === null) return
+  if (gate.isSim) {
+    gate = { ...gate, phase: 'merged' }
+    $.ui.toast(`PROTOTYPE sim: ${mode === 'send' ? 'would send' : 'would fill'} "merge"; jumping to merged`)
+  } else if (mode === 'send') {
+    await $.prompt.submit({ text: 'merge', asUser: true })
+  } else {
+    await propose($, 'merge')
+  }
+  $.ui.invalidate('ui.render')
+}
+
+// Send: /clear, then the command; on 2.1.291 `$.command.run` refuses inside a command.run hook but runs from a press,
+// and the clear resolves once the fresh session has its id. PROTOTYPE: the command is filled, not run, after the clear.
+async function pressNext($: EngineInterface, text: string) {
+  if (mode === 'fill') return propose($, text)
+  await $.command.run({ command: 'clear' })
+  gate = null
+  await $.prompt.fill({ text })
+  $.ui.toast(`PROTOTYPE: cleared; send mode would now run ${text} itself (filled instead)`)
+}
+
 export const register: Register = (on, options) => {
   const config = configOf(options)
+
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    if (e.agentId !== undefined) return done
+    if (e.answer.includes(GATE_TEXT)) gate = { pr: Number(/\/pull\/(\d+)/.exec(e.answer)?.[1]) || undefined, phase: 'gate', isSim: false }
+    else if (gate?.phase === 'merging') gate = { ...gate, phase: 'merged' }
+    $.ui.invalidate('ui.render')
+    return done
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    if (gate?.phase === 'gate' && !gate.isSim && e.text.trim() === 'merge') gate = { ...gate, phase: 'merging' }
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -145,18 +207,34 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
-    const { Box, Button }: E = $.ui.resolve(e)
+    const { Box, Button, Text }: E = $.ui.resolve(e)
+    const view = (await read($, snapshot)) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
+    const nextUp = nextOf(view, config)
+    const simPr = view !== null && !('error' in view) ? view.issues.find(issue => issue.pr !== undefined)?.pr : undefined
     // An unreadable pane list reads as closed: a throw here would take the band of every plugin beneath with it.
     const shown = await isOpen($).catch(() => false)
     return (
       <Box flexDirection="column">
         {below}
-        <Button
-          key="toggle"
-          plain
-          label={`${shown ? 'Hide' : 'Open'} gh-pane ${config.buttonIcon}`.trim()}
-          onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
-        />
+        <Box gap={2}>
+          <Button
+            key="toggle"
+            plain
+            label={`${shown ? 'Hide' : 'Open'} gh-pane ${config.buttonIcon}`.trim()}
+            onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
+          />
+          {variant === 'B' && gate?.phase === 'gate' && (
+            <Button key="b-merge" hotkey="m" label={`merge PR #${gate.pr ?? '?'}`} onPress={() => pressMerge($).catch(error => $.ui.toast(`${messageOf(error)}`))} />
+          )}
+          {variant === 'B' && gate?.phase === 'merging' && <Text color="cyan">{`merging PR #${gate.pr ?? '?'}…`}</Text>}
+          {variant === 'B' && gate?.phase === 'merged' && nextUp !== undefined && (
+            <Button key="b-next" hotkey="n" label={`${mode === 'send' ? 'clear + ' : ''}${nextUp.text}`} onPress={() => pressNext($, nextUp.text).catch(error => $.ui.toast(`${messageOf(error)}`))} />
+          )}
+          <Text dimColor>│ proto:</Text>
+          <Button key="p-variant" plain hotkey="v" label={`variant ${variant}`} onPress={() => { variant = variant === 'A' ? 'B' : variant === 'B' ? 'C' : 'A'; $.ui.invalidate('ui.render') }} />
+          <Button key="p-mode" plain hotkey="s" label={`mode ${mode}`} onPress={() => { mode = mode === 'send' ? 'fill' : 'send'; $.ui.invalidate('ui.render') }} />
+          <Button key="p-sim" plain hotkey="g" label={gate === null ? 'sim gate' : 'reset gate'} onPress={() => { gate = gate === null ? { pr: simPr, phase: 'gate', isSim: true } : null; $.ui.invalidate('ui.render') }} />
+        </Box>
       </Box>
     )
   })
@@ -202,6 +280,8 @@ export const register: Register = (on, options) => {
       return state.isReady || state.isNext
     }).length
     const isCapFull = view.prs >= config.prCap
+    const nextUp = nextOf(view, config)
+    const isAfterMerge = variant === 'C' && gate?.phase === 'merged'
 
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
@@ -223,15 +303,30 @@ export const register: Register = (on, options) => {
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
             {state.blockers ? blockers(state.blockers) : ''}
           </Text>
+          {variant === 'C' && gate?.phase === 'gate' && state.pr !== undefined && state.pr === gate.pr && (
+            <Button key={`merge-${issue.number}`} hotkey="m" label="merge" onPress={() => pressMerge($).catch(error => $.ui.toast(`${messageOf(error)}`))} />
+          )}
+          {variant === 'C' && gate?.phase === 'merging' && state.pr === gate.pr && <Text color="cyan">◐ merging…</Text>}
           {state.isReady && (
-            <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
+            <Button
+              key={`ship-${issue.number}`}
+              {...(isAfterMerge && nextUp?.n === issue.number ? {} : { plain: true as const })}
+              hotkey={isAfterMerge && nextUp?.n === issue.number ? 'n' : undefined}
+              label={variant === 'C' && mode === 'send' ? 'clear + ship' : 'ship'}
+              onPress={() => (variant === 'C' ? pressNext($, fill(config.shipCommand, { n: issue.number })) : propose($, fill(config.shipCommand, { n: issue.number })))}
+            />
           )}
           {state.isNext && (
             <Button
               key={`next-${issue.number}`}
-              plain
-              label="next"
-              onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
+              {...(isAfterMerge && nextUp?.n === issue.number ? {} : { plain: true as const })}
+              hotkey={isAfterMerge && nextUp?.n === issue.number ? 'n' : undefined}
+              label={variant === 'C' && mode === 'send' ? 'clear + next' : 'next'}
+              onPress={() =>
+                variant === 'C'
+                  ? pressNext($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))
+                  : propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))
+              }
             />
           )}
           {has(issue, config.needsTriage) && (
@@ -281,6 +376,19 @@ export const register: Register = (on, options) => {
         <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
           {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
         </Text>
+        {variant === 'A' && gate !== null && (
+          <Box gap={1} borderStyle="round" borderColor={gate.phase === 'merged' ? 'green' : 'yellow'} paddingX={1}>
+            {gate.phase === 'gate' && <Text color="yellow">◆ this session waits at the merge gate:</Text>}
+            {gate.phase === 'gate' && (gate.pr !== undefined ? ref(gate.pr, 'pull') : <Text>PR</Text>)}
+            {gate.phase === 'gate' && <Button key="a-merge" hotkey="m" label="merge" onPress={() => pressMerge($).catch(error => $.ui.toast(`${messageOf(error)}`))} />}
+            {gate.phase === 'merging' && <Text color="cyan">{`◐ merging #${gate.pr ?? '?'}…`}</Text>}
+            {gate.phase === 'merged' && <Text color="green">{`✓ #${gate.pr ?? '?'} merged · next:`}</Text>}
+            {gate.phase === 'merged' && (nextUp === undefined ? <Text dimColor>nothing ready</Text> : <Text bold>{nextUp.text}</Text>)}
+            {gate.phase === 'merged' && nextUp !== undefined && (
+              <Button key="a-next" hotkey="n" label={mode === 'send' ? 'clear + next' : 'next'} onPress={() => pressNext($, nextUp.text).catch(error => $.ui.toast(`${messageOf(error)}`))} />
+            )}
+          </Box>
+        )}
         {roots.map(root =>
           root.subs.total === 0 ? (
             row(root, '•')
