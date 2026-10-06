@@ -1,6 +1,6 @@
 {
   "name": "gh-pane",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",
@@ -16,6 +16,7 @@
     "shipCommand": { "type": "string", "title": "Ship command", "description": "What a ready issue's ship button fills; {n} is the issue number.", "default": "/ship {n}" },
     "triageCommand": { "type": "string", "title": "Triage command", "description": "What triage and triage all fill; {issues} is one number (12) or a list (#12, #13 one by one).", "default": "/triage {issues}" },
     "releaseRequest": { "type": "string", "title": "Release request", "description": "What a stale claim's release button fills; {n} is the issue number, {user} its assignees.", "default": "Release the ship claim on #{n}: unassign {user} and comment that the claim went stale with no PR." },
+    "closeRequest": { "type": "string", "title": "Close request", "description": "What the close button fills on an open issue whose sub-issues are all closed; {n} is the issue number, {total} its sub-issue count.", "default": "Close #{n}: all {total} of its sub-issues are closed." },
     "buttonIcon": { "type": "string", "title": "Band button icon", "description": "What follows Open gh-pane or Hide gh-pane on the button above the prompt. The default is the GitHub mark of a Nerd Font (U+F408); leave it empty where the terminal's font has no Nerd Font glyphs.", "default": "\uf408" }
   }
 }
