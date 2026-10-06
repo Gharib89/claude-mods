@@ -2,9 +2,9 @@
 # ship phase 6: push the branch and open a NON-DRAFT PR linked so the merge
 # closes the issue (drafts may not trigger a reviewer).
 #
-#   open-pr <issue> --title "<conventional-commit subject>" --body-file <path>
+#   open-pr <issue|none> --title "<conventional-commit subject>" --body-file <path>
 #
-# Run from the run's branch. <issue> may be `none` for a task-spec run: no
+# Run from the run's branch. `none` for the issue is a task-spec run: no
 # closing link, no branch-suffix check. The mechanic adds the host's closing
 # link when the body lacks one aimed at this issue. Re-running after a flake
 # returns the PR the first call created.
@@ -28,8 +28,8 @@ n=$1; shift
 title=""; file=""
 while [ $# -gt 0 ]; do
   case $1 in
-    --title) [ -n "${2:-}" ] || ship_tooling "$usage"; title=$2; shift 2 ;;
-    --body-file) [ -n "${2:-}" ] || ship_tooling "$usage"; file=$2; shift 2 ;;
+    --title) ship_flag_value "$usage" "${2:-}"; title=$2; shift 2 ;;
+    --body-file) ship_flag_value "$usage" "${2:-}"; file=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done

@@ -7,6 +7,24 @@ released version. See
 
 <!-- version list -->
 
+## v0.16.6 (2026-10-05)
+
+### Bug Fixes
+
+- **ship**: Gate the retro's mechanical review findings
+  ([#482](https://github.com/Gharib89/skills/pull/482),
+  [`0c689e8`](https://github.com/Gharib89/skills/commit/0c689e8e731cc86b56bc2c28035c0e609183563a))
+
+
+## v0.16.5 (2026-10-05)
+
+### Bug Fixes
+
+- **ship**: Count a criterion's throwaway probe PR as verification scaffolding
+  ([#481](https://github.com/Gharib89/skills/pull/481),
+  [`7f36cf8`](https://github.com/Gharib89/skills/commit/7f36cf8975b244dfd1194f7b319d83a0a1fcaf91))
+
+
 ## v0.16.4 (2026-10-03)
 
 ### Bug Fixes

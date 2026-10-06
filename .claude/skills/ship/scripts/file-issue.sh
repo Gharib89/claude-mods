@@ -38,11 +38,11 @@ title=""; file=""; label=""; exclude="[]"; repo=""
 while [ $# -gt 0 ]; do
   case $1 in
     --repo) ship_repo_arg "${2:-}" || ship_tooling "$usage"; repo=$2; shift 2 ;;
-    --title) [ -n "${2:-}" ] || ship_tooling "$usage"; title=$2; shift 2 ;;
-    --body-file) [ -n "${2:-}" ] || ship_tooling "$usage"; file=$2; shift 2 ;;
-    --label) [ -n "${2:-}" ] || ship_tooling "$usage"; label=$2; shift 2 ;;
+    --title) ship_flag_value "$usage" "${2:-}"; title=$2; shift 2 ;;
+    --body-file) ship_flag_value "$usage" "${2:-}"; file=$2; shift 2 ;;
+    --label) ship_flag_value "$usage" "${2:-}"; label=$2; shift 2 ;;
     --distinct-from)
-      [ -n "${1:-}" ] && [ -n "${2:-}" ] || ship_tooling "$usage"
+      ship_flag_value "$usage" "${2:-}"
       exclude=$(jq -cn --arg n "$2" '$n | split(",") | map(tonumber)' 2>/dev/null) \
         || ship_tooling "--distinct-from takes issue numbers: $2"
       shift 2 ;;

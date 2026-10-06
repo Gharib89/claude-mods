@@ -146,15 +146,15 @@ while [ $# -gt 0 ]; do
   case $1 in
     --brief) brief=true; shift ;;
     --reviewer) case ${2:-} in ''|-*) ship_tooling "$usage" ;; esac; name=$2; shift 2 ;;
-    --since) [ -n "${2:-}" ] || ship_tooling "$usage"; since=$2; shift 2 ;;
+    --since) ship_flag_value "$usage" "${2:-}"; since=$2; shift 2 ;;
     # Ids stay strings: GitHub numbers a review and Azure DevOps numbers a
     # thread, and the adapters compare `.id | tostring` against this list.
     --full)
-      [ -n "${2:-}" ] || ship_tooling "$usage"
+      ship_flag_value "$usage" "${2:-}"
       full=$(ship_id_list "$2") || ship_tooling "$usage"
       shift 2 ;;
-    --timeout) [ -n "${2:-}" ] || ship_tooling "$usage"; timeout=$2; shift 2 ;;
-    --interval) [ -n "${2:-}" ] || ship_tooling "$usage"; interval=$2; shift 2 ;;
+    --timeout) ship_flag_value "$usage" "${2:-}"; timeout=$2; shift 2 ;;
+    --interval) ship_flag_value "$usage" "${2:-}"; interval=$2; shift 2 ;;
     --sha) case ${2:-} in ''|-*) ship_tooling "$usage" ;; esac; want=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac

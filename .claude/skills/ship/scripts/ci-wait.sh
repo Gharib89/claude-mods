@@ -32,8 +32,8 @@ pr=$1; shift
 timeout=1800; interval=30; want=""
 while [ $# -gt 0 ]; do
   case $1 in
-    --timeout) [ -n "${2:-}" ] || ship_tooling "$usage"; timeout=$2; shift 2 ;;
-    --interval) [ -n "${2:-}" ] || ship_tooling "$usage"; interval=$2; shift 2 ;;
+    --timeout) ship_flag_value "$usage" "${2:-}"; timeout=$2; shift 2 ;;
+    --interval) ship_flag_value "$usage" "${2:-}"; interval=$2; shift 2 ;;
     --sha) case ${2:-} in ''|-*) ship_tooling "$usage" ;; esac; want=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac

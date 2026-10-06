@@ -31,13 +31,13 @@
       "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/setup-skills/SKILL.md",
-      "computedHash": "619ebfac3e07fdc1b13e53882ceab242976671e0b25487cd957eb985690b85fd"
+      "computedHash": "fb5264dee33127a5cf5cc5676f0c58df5ac73f4aa705d69068657ffe42e943be"
     },
     "ship": {
       "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/ship/SKILL.md",
-      "computedHash": "35c1a0b7448f2683a43ade545642cd4e79ca1b082c4ea6f35baca3c44854f30a"
+      "computedHash": "8984da9ce92185d6b134c27764912b24fa63f97a79c5fe824e8106a27a24270c"
     },
     "show-me": {
       "source": "humanlayer/skills",
@@ -64,7 +64,7 @@
       "source": "Gharib89/skills",
       "sourceType": "github",
       "skillPath": "skills/update-skills/SKILL.md",
-      "computedHash": "f861bae8ddcd5b40364427fb14d6de0d08f43fe9dda15795c624a631588c8136"
+      "computedHash": "f70f49f73066945237164587874a5ccdc3e9a653012b89423a153d621875fb95"
     },
     "writing-for-agents": {
       "source": "mattpocock/skills",

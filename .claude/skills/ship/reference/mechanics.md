@@ -24,8 +24,10 @@ stop branches on, may be made directly where no mechanic covers it: through the
 host's REST form (`gh api`, `az rest`), which the cloud sandbox admits where it
 refuses GitHub GraphQL, with one line in the Run file's `## Direct reads`
 naming the call and why. A read made directly in two runs is a candidate
-mechanic. Verification scaffolding, a scratch issue or scratch review thread a
-`Run:` line sets up by hand, sits outside the rule.
+mechanic. Verification scaffolding sits outside the rule: a scratch issue or
+scratch review thread a `Run:` line sets up by hand, or a throwaway probe PR an
+acceptance criterion asks for, with its pushes and CI cancels, closed unmerged
+before the merge gate.
 
 ## Which mechanic each phase runs
 
