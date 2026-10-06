@@ -303,6 +303,25 @@ for (const [name, setup, line] of [
   })
 }
 
+test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
+  const { calls, clock, repo } = host(on)
+  repo.failsAt = 1
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
+  const reads = () => calls.filter(argv => argv[2] === 'repos/{owner}/{repo}').length
+  expect(reads()).toBe(1)
+
+  await ui.press({ key: 'retry' })
+  await clock.settle()
+  expect(reads()).toBe(2)
+  expect(await ui.find({ text: /PR cap/ })).toBeDefined()
+
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(reads()).toBe(3)
+})
+
 test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, and every 120 s', async ($, on) => {
   const { calls, clock, panes } = host(on)
   on('tool.call', async () => ({ result: '' }))

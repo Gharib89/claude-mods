@@ -175,7 +175,15 @@ export const register: Register = (on, options) => {
     const view = (await read($, snapshot)) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
-    if ('error' in view) return <Text color="red">{cut(view.error, room)}</Text>
+    // A failed read (a network blip) holds the pane until the next re-read, so retry starts one now.
+    if ('error' in view) {
+      return (
+        <Box gap={1}>
+          <Text color="red">{cut(view.error, room - 10)}</Text>
+          <Button key="retry" label="retry" onPress={() => refreshIfOpen($, config)} />
+        </Box>
+      )
+    }
     if (view.issues.length === 0 && view.prs === 0) return <Text dimColor>{`Nothing open in ${view.repo}.`}</Text>
 
     const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
@@ -278,9 +286,12 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={room}>
-        <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
-          {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
-        </Text>
+        <Box gap={1}>
+          <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
+            {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
+          </Text>
+          <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
+        </Box>
         {roots.map(root =>
           root.subs.total === 0 ? (
             row(root, '•')
