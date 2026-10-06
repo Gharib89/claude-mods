@@ -31,7 +31,7 @@ export type Snapshot =
 export type Gate = {
   pr: number
   phase: 'gate' | 'merging' | 'merged'
-  /** Once merged: the command the next button runs after a /clear, the first ready row's. None when nothing is ready. */
+  /** Once merged: the command the next button runs after a /clear, the first ready row's. None when nothing is ready or its command is no slash command. */
   next?: { text: string; command: string; args: string }
 }
 

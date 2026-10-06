@@ -88,6 +88,9 @@ test('a gate answer names its PR by the first /pull/N, and only with the gate te
   expect(gatePr('Reply merge /pull/3', 'Reply "merge"')).toBeUndefined()
   expect(gatePr('Say a.c /pull/3', 'a.c')).toBe(3)
   expect(gatePr('Say abc /pull/3', 'a.c')).toBeUndefined()
+  // The number ends at its digits, and `/pulls/7` is no PR path.
+  expect(gatePr(`${text} /pull/42abc`, text)).toBe(42)
+  expect(gatePr(`${text} /pulls/7`, text)).toBeUndefined()
 })
 
 test('a slash command splits into its name and args, and other text is no command', () => {

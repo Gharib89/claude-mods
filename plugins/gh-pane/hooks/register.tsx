@@ -161,8 +161,8 @@ function nextCommand(view: Open, config: Config): string | undefined {
 
 const setGate = ($: EngineInterface, to: Gate | null) => update($, gate, () => to)
 
-// Sends the reply as the person's own words. The mod's own prompt.submit hook never sees a plugin's call (seen in the
-// types of 2.1.291), so the press marks the merging itself.
+// Sends the reply as the person's own words. The mod's own prompt.submit hook sees this call too (it skips only the
+// hook that calls), so the press marks the merging first and the hook finds the gate already passed.
 async function pressMerge($: EngineInterface, config: Config, at: Gate) {
   await setGate($, { ...at, phase: 'merging' })
   try {
@@ -179,6 +179,7 @@ async function settleMerge($: EngineInterface, config: Config, pr: number) {
   try {
     if (!(await isMerged(runnerOf($), pr))) return await setGate($, null)
     const view = await refresh($, config)
+    if ('error' in view) $.ui.toast(view.error)
     const text = 'error' in view ? undefined : nextCommand(view, config)
     const run = text === undefined ? undefined : commandOf(text)
     await setGate($, { pr, phase: 'merged', next: text === undefined || run === undefined ? undefined : { text, ...run } })

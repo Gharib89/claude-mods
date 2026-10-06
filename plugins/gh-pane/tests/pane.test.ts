@@ -614,6 +614,32 @@ test('the next button of a map ticket runs the map command', async ($, on) => {
   expect(ran.at(-1)).toEqual({ command: 'wayfinder', args: '4 6' })
 })
 
+test('a subagent turn while merging settles nothing', async ($, on) => {
+  const { pulls, clock, calls } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED, 'agent-1')
+  await clock.settle()
+  expect(await band.find({ text: 'merging PR #42…' })).toBeDefined()
+  expect(calls.filter(argv => argv.at(-2) === '--jq')).toEqual([])
+})
+
+test('a next-command read that fails says so in a toast and shows no next button', async ($, on) => {
+  const { pulls, repo, toasts, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  pulls[42] = true
+  repo.failsAt = 1
+  await answer($, GATE)
+  await type($, 'merge')
+  await answer($, MERGED)
+  await clock.settle()
+  expect(toasts).toEqual(['gh-pane: gh api: gh: HTTP 401: Bad credentials'])
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+})
+
 test('a PR that did not merge, or no ready row, shows no next button', async ($, on) => {
   const { pulls, fixture, clock } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
