@@ -43,7 +43,7 @@ pr=$1; issue=$2; shift 2
 wt=""
 while [ $# -gt 0 ]; do
   case $1 in
-    --worktree) [ -n "${2:-}" ] || ship_tooling "$usage"; wt=$2; shift 2 ;;
+    --worktree) ship_flag_value "$usage" "${2:-}"; wt=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done

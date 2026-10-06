@@ -15,7 +15,7 @@ pr=$1; shift
 title=""
 while [ $# -gt 0 ]; do
   case $1 in
-    --title) [ -n "${2:-}" ] || ship_tooling "$usage"; title=$2; shift 2 ;;
+    --title) ship_flag_value "$usage" "${2:-}"; title=$2; shift 2 ;;
     *) ship_tooling "unknown flag: $1" ;;
   esac
 done

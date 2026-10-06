@@ -11,16 +11,16 @@
 #   run-file open|close <n> <where>
 #   run-file skip <n> <reason> <where>
 #   run-file timing <where>
+#   <where>: --file <path> | --issue <n|slug> [--scratchpad <dir>]
 #
-# where <where> is `--file <path>`, or `--issue <n|slug> [--scratchpad <dir>]`
-# for the layout `init` wrote, `<scratchpad>/ship-<issue>/run.md`. A left-out
-# `--scratchpad` is `$TMPDIR` or `/tmp`, which is where a run whose harness named
-# no scratchpad put the record; a run whose harness named one passes it, the same
-# directory it passed `init`. `init` owns
-# that layout, so it is the mechanic that resolves it: a run whose context was
-# compacted still has the issue it was invoked on and the scratchpad its
-# environment block names, and called `close` without a path twice for want of
-# the rest (#218). An explicit `--file` wins, and neither given is the usage
+# The `--issue` form reads the layout `init` wrote,
+# `<scratchpad>/ship-<issue>/run.md`. A left-out `--scratchpad` is `$TMPDIR` or
+# `/tmp`, which is where a run whose harness named no scratchpad put the record;
+# a run whose harness named one passes it, the same directory it passed `init`.
+# `init` owns that layout, so it is the mechanic that resolves it: a run whose
+# context was compacted still has the issue it was invoked on and the scratchpad
+# its environment block names, and called `close` without a path twice for want
+# of the rest (#218). An explicit `--file` wins, and neither given is the usage
 # error it always was.
 #
 # `init` writes the ten items and returns them, one per harness task the run
@@ -143,9 +143,9 @@ parse_file() { # parse_file "$@": where every flip and timing reads the record
   file="" issue="" scratchpad=${TMPDIR:-/tmp}
   while [ $# -gt 0 ]; do
     case $1 in
-      --file)       [ -n "${2:-}" ] || ship_tooling "--file needs a path"; file=$2; shift 2 ;;
-      --issue)      [ -n "${2:-}" ] || ship_tooling "--issue needs an issue or slug"; issue=$2; shift 2 ;;
-      --scratchpad) [ -n "${2:-}" ] || ship_tooling "--scratchpad needs a directory"; scratchpad=$2; shift 2 ;;
+      --file)       ship_flag_value "$usage" "${2:-}" "--file needs a path"; file=$2; shift 2 ;;
+      --issue)      ship_flag_value "$usage" "${2:-}" "--issue needs an issue or slug"; issue=$2; shift 2 ;;
+      --scratchpad) ship_flag_value "$usage" "${2:-}" "--scratchpad needs a directory"; scratchpad=$2; shift 2 ;;
       *) ship_tooling "unknown flag: $1" ;;
     esac
   done
@@ -186,12 +186,12 @@ init)
   rebuild=false states=""
   while [ $# -gt 0 ]; do
     case $1 in
-      --scratchpad)    [ $# -ge 2 ] || ship_tooling "--scratchpad needs a directory"; scratchpad=$2; shift 2 ;;
-      --tripwires)     [ $# -ge 2 ] || ship_tooling "--tripwires needs a value"; tripwires=$2; shift 2 ;;
-      --verifications) [ $# -ge 2 ] || ship_tooling "--verifications needs a value"; verifications=$2; shift 2 ;;
-      --reviewers)     [ $# -ge 2 ] || ship_tooling "--reviewers needs a value"; reviewers=$2; shift 2 ;;
-      --legs)          [ $# -ge 2 ] || ship_tooling "--legs needs a value"; legs=$2; shift 2 ;;
-      --state)         [ $# -ge 2 ] || ship_tooling "--state needs <n>=<spec>"; states="$states$2
+      --scratchpad)    [ $# -ge 2 ] || ship_tooling "--scratchpad needs a directory"; case $2 in -*) ship_tooling "$usage" ;; esac; scratchpad=$2; shift 2 ;;
+      --tripwires)     [ $# -ge 2 ] || ship_tooling "--tripwires needs a value"; case $2 in -*) ship_tooling "$usage" ;; esac; tripwires=$2; shift 2 ;;
+      --verifications) [ $# -ge 2 ] || ship_tooling "--verifications needs a value"; case $2 in -*) ship_tooling "$usage" ;; esac; verifications=$2; shift 2 ;;
+      --reviewers)     [ $# -ge 2 ] || ship_tooling "--reviewers needs a value"; case $2 in -*) ship_tooling "$usage" ;; esac; reviewers=$2; shift 2 ;;
+      --legs)          [ $# -ge 2 ] || ship_tooling "--legs needs a value"; case $2 in -*) ship_tooling "$usage" ;; esac; legs=$2; shift 2 ;;
+      --state)         [ $# -ge 2 ] || ship_tooling "--state needs <n>=<spec>"; case $2 in -*) ship_tooling "$usage" ;; esac; states="$states$2
 "; shift 2 ;;
       --rebuild)       rebuild=true; shift ;;
       *) ship_tooling "unknown flag: $1" ;;

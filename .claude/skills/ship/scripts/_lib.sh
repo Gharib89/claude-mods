@@ -246,6 +246,16 @@ ship_args() { # ship_args <usage> <kinds> "$@"
   done
 }
 
+# ship_flag_value <usage> <value> [<on-empty>]: the guard on the value a flag
+# takes, run at the flag's own case arm. A missing, empty or leading-dash value
+# is `ship_tooling <usage>`, or `ship_tooling <on-empty>` for an empty one where
+# the caller keeps its own wording. A guard that tests only for emptiness reads
+# the next flag as the value: `--title --body-file b.md` filed a title.
+ship_flag_value() { # ship_flag_value <usage> <value> [<on-empty>]
+  case $2 in -*) ship_tooling "$1" ;; esac
+  [ -n "$2" ] || ship_tooling "${3:-$1}"
+}
+
 # ship_issue_has_label <n> <label>: exit 0 when the issue carries the label,
 # read from `host_issue_get`'s labels[] so no adapter keeps a second read of it.
 ship_issue_has_label() {

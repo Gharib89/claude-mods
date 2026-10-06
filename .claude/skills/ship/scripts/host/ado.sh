@@ -57,7 +57,7 @@ host_tooling_reasons() {
 # Azure DevOps repo"); on a developer machine the tooling reasons already name it.
 host_tooling_install() {
   local sudo=""; [ "$(id -u)" -eq 0 ] || sudo="sudo -n"
-  command -v az >/dev/null || curl -fsSL https://aka.ms/InstallAzureCLIDeb | $sudo bash
+  command -v az >/dev/null || curl -fsSL --connect-timeout 30 --max-time 120 https://aka.ms/InstallAzureCLIDeb | $sudo bash
   az extension show --name azure-devops >/dev/null 2>&1 || az extension add --name azure-devops
 }
 # Entra login first; a PAT session has no `az account`, so fall back to the

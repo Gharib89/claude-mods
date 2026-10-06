@@ -3,7 +3,7 @@ name: ship
 description: Drive one tracker issue to a merge-ready PR in a single run, stopping only at the human merge gate. Use when the user wants to ship an issue, or to run the unattended lane.
 argument-hint: "[issue-number] [--unattended]"
 metadata:
-  version: 0.16.4
+  version: 0.16.6
   profile-schema: 3
   composes: mattpocock/skills#d81f3a183412e71a5b1e84ca21bc1a35eea03a60:tdd mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:writing-for-agents mattpocock/skills#c55ee46073ed923f86ce59a5eb3b6d895095d1b7:code-review upstash/context7#e275a848a420e0d11c2822f61201ee005bfd1133:find-docs humanlayer/skills#ca7c8088db69e315a8b2deea43820270457f8f3c:show-me
 ---
@@ -159,12 +159,12 @@ the worktree, which may predate a merge; and a finding's **evidence and its
 claim are separate**, so a reviewer citing the wrong commit for a real primitive
 is still right. A valid finding outside the issue is an adjacent find. Then read
 the diff yourself against the depth checks in the coding-standards file the
-Standards axis reads, by their leading words: a vocabulary the change extends, a
-rule-shaped prose change, new pattern-matching code, a new test run with its fix
-reverted, a fix landed after review, and any the repo adds beside them. Reviewer
-rounds find these otherwise, serially, at the cost of most of a run's wall time,
-and the reverted-fix one escapes them entirely. This self-review plus green CI
-is the review gate.
+Standards axis reads, and the sub-files it routes to, by their leading words: a
+vocabulary the change extends, a rule-shaped prose change, new pattern-matching
+code, a new test run with its fix reverted, a fix landed after review, and any
+the repo adds beside them. Reviewer rounds find these otherwise, serially, at
+the cost of most of a run's wall time, and the reverted-fix one escapes them
+entirely. This self-review plus green CI is the review gate.
 **Done when:** every report that fired has its Report file on disk and its path
 in the Run file, every finding carries a disposition, and docs-sync landed or is
 skipped in one line.
@@ -207,8 +207,8 @@ block's `Resolve:`; `Cap:` bounds the rounds. **Every reviewer whose
 `Fallback-for:` reads `None.` first, then the fallbacks.** Exits: `reviewed`,
 `not reviewed: <reason>`, or `not invoked: <primary> reviewed`; `not reviewed`
 proceeds to the merge gate on green CI and is reported there. At exit,
-`update-pr-body --section` writes the sections the rounds grew, `Review` last,
-then the phase-6 read-back.
+`update-pr-body --section --body-file` writes the sections the rounds grew,
+`Review` last, then the phase-6 read-back.
 **Done when:** every reviewer carries an exit word, every thread `poll-pr`
 returned is replied to and resolved per `Resolve:`, every section the rounds
 grew is rewritten, and `read-pr` shows a `## Review` line per reviewer.
