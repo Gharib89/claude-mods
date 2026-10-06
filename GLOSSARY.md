@@ -1,6 +1,6 @@
 # claude-mods
 
-A marketplace of mods and hook plugins for Claude Code, and the place where the owner decides which session extensions to install, adopt or build.
+A marketplace of mods and hook plugins for Claude Code, and the place where the owner decides which session extensions to use, install, adopt or build.
 
 ## Language
 
@@ -29,11 +29,15 @@ A need or an existing extension under consideration for the owner's sessions, be
 _Avoid_: Idea, proposal
 
 **Verdict**:
-The ruling on a candidate: install, adopt, build or skip.
+The ruling on a candidate: use, install, adopt, build or skip, cheapest first.
 _Avoid_: Decision, rating
 
 **Skip**:
 The verdict that a candidate is not worth any work, recorded with its reason so it is not weighed again.
+
+**Use**:
+The verdict that something already in reach (a built-in, a setting, an installed skill) serves the need, so it is only turned on, configured or taken up as a habit.
+_Avoid_: Adopt, enable
 
 **Install**:
 The verdict that a third-party plugin serves the need as published, so it is installed from its own marketplace unchanged.
