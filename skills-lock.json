@@ -14,12 +14,32 @@
       "skillPath": "skills/engineering/code-review/SKILL.md",
       "computedHash": "caa9a086baaf9e0f7cd71f64edfa83da6821c05e826b083221f3d02e3d6a1905"
     },
+    "domain-modeling": {
+      "source": "mattpocock/skills",
+      "ref": "d81f3a183412e71a5b1e84ca21bc1a35eea03a60",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "computedHash": "b3eb40152b81f0c98fd2095a023c019452dbdce56f7540cc67fece2972db8369"
+    },
     "find-docs": {
       "source": "upstash/context7",
       "ref": "e275a848a420e0d11c2822f61201ee005bfd1133",
       "sourceType": "github",
       "skillPath": "skills/find-docs/SKILL.md",
       "computedHash": "93ec2d2786d7e83973252383875c4f345a2ee7cbbd08a1ab38e5201b214640ee"
+    },
+    "grill-with-artifact": {
+      "source": "Gharib89/skills",
+      "sourceType": "github",
+      "skillPath": "skills/grill-with-artifact/SKILL.md",
+      "computedHash": "c6eae90d5fb49200e88381233a8d45b710e3a2b25f5e571b22685b0509274501"
+    },
+    "grilling": {
+      "source": "mattpocock/skills",
+      "ref": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grilling/SKILL.md",
+      "computedHash": "4dd886b0196bf43729d954ae326016f2bd9f5f79d892500b407c33a753362f14"
     },
     "setup-harness": {
       "source": "Gharib89/skills",

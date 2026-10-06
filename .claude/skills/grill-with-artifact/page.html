@@ -1,0 +1,529 @@
+<title>{{TOPIC}}</title>
+<!--
+  grill-with-artifact's fixed page. A session copies it, fills the title above with the topic
+  (HTML-escaped), publishes it once with the db, user and comments capabilities, and from then on
+  writes rounds to its database; round-data.md is the contract. Nothing here is republished per round.
+
+  Credits: grill-with-artifact is derived from grill-with-docs in mattpocock/skills (MIT, Matt Pocock).
+  The palette, type and question-card styling follow html-plan's htmlplan.css (claude-community
+  marketplace, MIT, Thariq Shihipar).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..700&display=swap">
+<style>
+/* Layout: one reading column. The design tree, then each settled round, then the open round, and a
+   floating Submit bar at the foot. Warm paper, one accent, hairline borders for edges. */
+:root {
+  --page: #faf9f5; --card: #ffffff; --hover: #f0eee6;
+  --fg: #141413; --fg-body: #3d3d3a; --fg-label: #73726c;
+  --line: #1f1e1d14; --line-strong: #1f1e1d26;
+  --accent: #c6613f; --accent-ink: #ffffff; --accent-wash: #f6e7df; --accent-line: #c6613f66;
+  --ok: #2c7a39; --ok-wash: #e2efdf;
+  --park: #73726c; --park-wash: #f0eee6;
+  --warn: #946410; --warn-wash: #f4ead2; --danger: #b3261e;
+  --r: 12px; --r-sm: 8px; --r-btn: 999px;
+  --f-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #262624; --card: #30302e; --hover: #1f1e1d;
+    --fg: #faf9f5; --fg-body: #c2c0b6; --fg-label: #9c9a92;
+    --line: #dedcd114; --line-strong: #dedcd126;
+    --accent: #d97757; --accent-ink: #141413; --accent-wash: #46302a; --accent-line: #d9775780;
+    --ok: #6fb37a; --ok-wash: #26372a;
+    --park: #9c9a92; --park-wash: #1f1e1d;
+    --warn: #d9a441; --warn-wash: #3d331f; --danger: #e5776e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #262624; --card: #30302e; --hover: #1f1e1d;
+  --fg: #faf9f5; --fg-body: #c2c0b6; --fg-label: #9c9a92;
+  --line: #dedcd114; --line-strong: #dedcd126;
+  --accent: #d97757; --accent-ink: #141413; --accent-wash: #46302a; --accent-line: #d9775780;
+  --ok: #6fb37a; --ok-wash: #26372a;
+  --park: #9c9a92; --park-wash: #1f1e1d;
+  --warn: #d9a441; --warn-wash: #3d331f; --danger: #e5776e;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { color: var(--fg); font: 430 16px/1.6 var(--f-sans); -webkit-font-smoothing: antialiased; background: var(--page); }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-family: var(--f-serif); font-weight: 500; }
+h1 { font-size: clamp(28px, 4.4vw, 38px); line-height: 1.15; }
+h2 { font-size: 24px; line-height: 1.25; }
+h3 { font-size: 20px; line-height: 1.3; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code { font: .86em var(--f-mono); background: var(--hover); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.label { font: 430 12px/1.4 var(--f-mono); color: var(--fg-label); }
+.qid { font: 430 12px var(--f-mono); color: var(--fg-label); }
+.how { font: 430 12px var(--f-mono); color: var(--fg-label); white-space: nowrap; margin-left: 6px; }
+.tag, .qtag, .rec { font: 430 12px/1.5 var(--f-mono); border-radius: 999px; padding: 1px 8px; white-space: nowrap; color: var(--fg-body); background: var(--hover); }
+.tag.ok { color: var(--ok); background: var(--ok-wash); }
+.tag.accent { color: var(--accent); background: var(--accent-wash); }
+.tag.park { color: var(--park); background: var(--park-wash); }
+.qtag[data-state="ready"] { color: var(--ok); background: var(--ok-wash); }
+.qtag[data-state="deferred"] { color: var(--park); background: var(--park-wash); }
+.qtag[data-state="incomplete"] { color: var(--warn); }
+.rec { color: var(--accent); background: none; border: 1px solid var(--accent-line); padding: 0 7px; }
+
+.btn { font: 550 14px/1.2 var(--f-sans); color: var(--fg); background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r-btn); padding: 9px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--fg-label); }
+.btn.accent { background: var(--accent); border-color: transparent; color: var(--accent-ink); }
+.btn.accent:hover:not(:disabled) { filter: brightness(.95); }
+.btn.on { border-color: var(--park); color: var(--park); background: var(--park-wash); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn-sm { padding: 6px 11px; font-size: 14px; }
+.btn-link { font: 550 14px var(--f-sans); background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--accent-line); white-space: nowrap; }
+.btn-link:disabled { opacity: .4; cursor: not-allowed; }
+textarea, input[type="text"] { width: 100%; font: 14px/1.5 var(--f-sans); color: var(--fg); background: var(--page); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 8px 10px; }
+textarea { resize: vertical; min-height: 2.6em; }
+textarea:focus, input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+textarea:disabled, input:disabled { opacity: .6; }
+
+.panel { background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--r); }
+.wrap { max-width: 860px; margin: 0 auto; padding-inline: 24px; padding-block: 40px 32px; display: grid; gap: 36px; }
+.hdr { display: grid; gap: 12px; }
+.lede { font-size: 16px; line-height: 1.5; color: var(--fg-body); max-width: 62ch; }
+.notice { padding: 20px; color: var(--fg-body); }
+.round { display: grid; gap: 16px; }
+.rhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; }
+.rhead .btn-link { margin-left: auto; }
+.settled summary { cursor: pointer; padding: 12px 16px; font-weight: 550; font-size: 14px; }
+.settled ol { margin: 0; padding: 4px 16px 14px; list-style: none; display: grid; gap: 10px; }
+.settled li { display: grid; grid-template-columns: 3.6rem minmax(0, 1fr) auto; gap: 10px; align-items: baseline; font-size: 14px; color: var(--fg-body); }
+.settled li b { color: var(--fg); font-weight: 550; }
+.docs { display: grid; gap: 6px; padding: 12px 14px; }
+.docs ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px; color: var(--fg-body); }
+.docs-none { font-size: 14px; color: var(--fg-body); }
+.q { padding: 16px 20px 20px; display: grid; gap: 14px; min-width: 0; }
+.q[data-state="empty"], .q[data-state="incomplete"] { border-color: var(--accent); }
+.q[data-state="empty"] .qn, .q[data-state="incomplete"] .qn { color: var(--accent); }
+.q.flash { animation: q-flash 1.5s; }
+@keyframes q-flash { 0%, 55% { box-shadow: 0 0 0 2px var(--accent); } }
+.qhead { display: flex; gap: 10px; align-items: baseline; }
+.qhead h3 { flex: 1; min-width: 0; }
+.carried { font-size: 14px; color: var(--fg-body); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.opts { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+.opt { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; background: var(--page); border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; line-height: 1.4; }
+.opt:hover { border-color: var(--line-strong); }
+.opt:has(input:checked) { border-color: var(--fg-label); background: var(--card); }
+.opt.defer:has(input:checked) { border-color: var(--park); background: var(--park-wash); }
+.opt input[type="radio"] { margin: 3px 0 0; width: 16px; height: 16px; accent-color: var(--accent); }
+.opt > span { display: grid; gap: 4px; min-width: 0; }
+.opt .t { font-weight: 550; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.opt .d { color: var(--fg-body); font-size: 14px; font-weight: 430; }
+.why { background: var(--hover); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; display: grid; gap: 6px; font-size: 14px; color: var(--fg-body); }
+.why .label { color: var(--accent); }
+.foot { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.comment { flex: 1 1 16rem; display: grid; gap: 6px; }
+.summary { display: grid; gap: 8px; padding: 20px; }
+.summary h3:not(:first-child) { margin-top: 10px; }
+.summary p { color: var(--fg-body); }
+.bar { position: sticky; bottom: 12px; z-index: 5; width: calc(100% - 32px); max-width: 860px; margin: 0 auto 12px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px)); }
+.bar-in { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; }
+.count { font-variant-numeric: tabular-nums; color: var(--fg-body); font-size: 14px; }
+.count b { color: var(--fg); }
+.tally { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.jump { border-color: var(--accent); color: var(--accent); font-variant-numeric: tabular-nums; }
+.jump[hidden] { display: none; }
+.actions, .cl-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.cl-ctl { display: grid; gap: 10px; }
+.cl-note { display: grid; gap: 6px; }
+
+.st { flex-basis: 100%; font-size: 14px; color: var(--fg-body); display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--fg-label); border-radius: var(--r-sm); background: var(--page); }
+.st b { color: var(--fg); }
+.st-sending { display: flex; align-items: center; gap: 10px; }
+.st-ok { border-left-color: var(--ok); }
+.st-warn { border-left-color: var(--warn); }
+.st-bad { border-left-color: var(--danger); }
+.st pre { margin: 0; white-space: pre-wrap; font: 12px/1.5 var(--f-mono); color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; max-height: 12em; overflow: auto; }
+.st-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.spin { flex: none; width: 12px; height: 12px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } .q.flash { animation: none; box-shadow: 0 0 0 2px var(--accent); } }
+
+.fig { margin: 0; display: grid; gap: 10px; padding: 14px; min-width: 0; }
+.q .fig { background: var(--page); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.fig-scroll { overflow-x: auto; }
+.fig svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.fig figcaption { font-size: 14px; color: var(--fg-body); max-width: 68ch; }
+
+/* Figure style contract (round-data.md): the only classes a figure uses; every colour is a token. */
+.fig svg { color: var(--fg); }
+.fig svg text { font: 12px var(--f-sans); fill: currentColor; }
+.fig svg rect, .fig svg path, .fig svg line { stroke: currentColor; fill: none; }
+.fig svg .lbl { font: 12px var(--f-mono); fill: var(--fg-label); }
+.fig svg .n-settled rect { fill: var(--ok-wash); stroke: var(--ok); }
+.fig svg .n-open rect { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.5; }
+.fig svg .n-open text { font-weight: 550; }
+.fig svg .n-blocked rect { fill: var(--warn-wash); stroke: var(--warn); stroke-dasharray: 4 3; }
+.fig svg .n-blocked text { fill: var(--fg-body); }
+.fig svg .n-deferred rect { fill: var(--park-wash); stroke: var(--park); stroke-dasharray: 2 3; }
+.fig svg .edge { fill: none; stroke: var(--fg-label); stroke-width: 1.2; }
+.fig svg .edge.hot { stroke: var(--accent); stroke-width: 1.8; }
+.fig svg .box rect { fill: var(--card); stroke: var(--fg-label); }
+.fig svg .box.hot rect { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.5; }
+.fig svg [data-q] { cursor: pointer; }
+
+@media (max-width: 560px) {
+  h2 { font-size: 20px; }
+  .wrap { padding-inline: 16px; padding-block: 24px; gap: 28px; }
+  .q { padding: 14px 16px 16px; }
+  .settled li { grid-template-columns: 3.2rem minmax(0, 1fr); }
+  .settled li > :last-child { grid-column: 2; justify-self: start; }
+}
+</style>
+
+<main id="app"></main>
+
+<script>
+/* ---- core: state in, HTML out. No DOM here, so the page can run headless against round-data.md. ---- */
+// How a settled answer was reached: [one, many].
+const HOW = { rec: ['recommendation', 'recommendations'], pick: ['your pick', 'your picks'], other: ['your own answer', 'your own answers'], defer: ['deferred', 'deferred'] };
+const QTAG = { empty: 'Open', incomplete: 'Other needs text', ready: 'Ready', deferred: 'Deferred' };
+
+function newState(topic) {
+  return { topic, rounds: [], submitted: {}, draft: null, status: 'idle', mode: 'loading', canEdit: true };
+}
+const openRound = S => S.rounds[S.rounds.length - 1];
+const blank = () => ({ choice: null, other: '', comment: '' });
+function blankDraft(r) {
+  const ids = r.kind === 'closing' ? ['closing'] : r.questions.map(q => q.id);
+  return { round: r.round, answers: Object.fromEntries(ids.map(id => [id, blank()])), reopen: [] };
+}
+function setRounds(S, docs) {
+  S.rounds = docs.slice().sort((a, b) => a.round - b.round);
+  S.mode = 'ready';
+  const r = openRound(S);
+  if (r && (!S.draft || S.draft.round !== r.round)) { S.draft = blankDraft(r); S.status = 'idle'; }
+}
+function setAnswers(S, docs) { S.submitted = Object.fromEntries(docs.map(d => [d.round, true])); }
+function restoreDraft(S, saved) {
+  if (!saved || saved.round !== S.draft.round) return;
+  for (const [id, a] of Object.entries(S.draft.answers)) {
+    const s = saved.answers && saved.answers[id];
+    if (s) for (const k of ['choice', 'other', 'comment']) if (typeof s[k] === 'string') a[k] = s[k];
+  }
+  if (Array.isArray(saved.reopen)) S.draft.reopen = saved.reopen.filter(x => typeof x === 'string');
+}
+
+const locked = S => !S.canEdit || ['sending', 'sent', 'saved'].includes(S.status) || !!S.submitted[S.draft.round];
+const ans = (S, id) => S.draft.answers[id];
+function qstate(S, q) {
+  const a = ans(S, q.id);
+  if (!a.choice) return 'empty';
+  if (a.choice === 'defer') return 'deferred';
+  if (a.choice === 'other' && !a.other.trim()) return 'incomplete';
+  return 'ready';
+}
+const readyN = (S, r) => r.questions.filter(q => ['ready', 'deferred'].includes(qstate(S, q))).length;
+// Questions the jump button still points at: none once the round locks.
+const todoN = (S, r) => locked(S) ? 0 : r.questions.length - readyN(S, r);
+function canSubmit(S) {
+  const r = openRound(S);
+  if (!r || locked(S)) return false;
+  if (r.kind === 'closing') { const c = ans(S, 'closing'); return c.choice === 'confirm' || (c.choice === 'not-yet' && !!c.comment.trim()); }
+  return readyN(S, r) === r.questions.length;
+}
+// Where a settled answer went: the first later question carried from it.
+function carriedTo(S, id) {
+  for (const d of S.rounds) for (const q of d.questions || []) if (q.carriedFrom && q.carriedFrom.id === id) return { round: d.round, q: q.id, open: d === openRound(S) };
+  return null;
+}
+
+const ACT = {
+  pick(S, d) { if (!locked(S)) ans(S, d.q).choice = d.o; },
+  rec(S, d) { const q = openRound(S).questions.find(x => x.id === d.q); ACT.pick(S, { q: d.q, o: q.recommended }); },
+  all(S) { if (!locked(S)) for (const q of openRound(S).questions) if (!ans(S, q.id).choice) ans(S, q.id).choice = q.recommended; },
+  field(S, d) { if (!locked(S)) ans(S, d.q)[d.field] = d.value; },
+  reopen(S, d) { if (locked(S)) return; const r = S.draft.reopen; S.draft.reopen = r.includes(d.id) ? r.filter(x => x !== d.id) : [...r, d.id]; },
+  closing(S, d) { if (!locked(S)) ans(S, 'closing').choice = d.choice; },
+};
+
+function answersDoc(S, at = new Date().toISOString()) {
+  return { round: S.draft.round, submittedAt: at,
+    answers: Object.entries(S.draft.answers).map(([id, a]) => ({ id, choice: a.choice, other: a.choice === 'other' ? a.other.trim() : '', comment: a.comment.trim() })),
+    reopen: S.draft.reopen.slice() };
+}
+function answerLabel(q, a) {
+  if (a.choice === 'defer') return 'Deferred';
+  if (a.choice === 'other') return 'Other: ' + a.other.trim();
+  const o = q.options.find(x => x.id === a.choice);
+  return a.choice + '. ' + (o ? o.title : '');
+}
+function answersText(S) {
+  const r = openRound(S), n = S.draft.round;
+  // Names the database document without claiming the save worked: this text is also the fallback.
+  const lines = [`grill-with-artifact: round ${n} answers (database document answers/round-${n})`];
+  if (r.kind === 'closing') {
+    const c = ans(S, 'closing');
+    lines.push(c.choice === 'confirm' ? 'Closing: Confirm' : 'Closing: Not yet');
+    if (c.comment.trim()) lines.push('What is missing: ' + c.comment.trim());
+    return lines.join('\n');
+  }
+  for (const q of r.questions) {
+    const a = ans(S, q.id);
+    lines.push(`${q.id}: ${answerLabel(q, a)}`);
+    if (a.comment.trim()) lines.push('  comment: ' + a.comment.trim());
+  }
+  if (S.draft.reopen.length) lines.push('Reopen: ' + S.draft.reopen.join(', '));
+  return lines.join('\n');
+}
+
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const md = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+const dis = S => locked(S) ? 'disabled' : '';
+const fig = (svg, cap) => `<figure class="fig panel"><div class="fig-scroll">${svg}</div>${cap ? `<figcaption>${md(cap)}</figcaption>` : ''}</figure>`;
+
+function view(S) {
+  const r = openRound(S);
+  if (S.mode === 'nodb') return shell(S, 'This page cannot reach its database here, so no round can load. Say so in the terminal, and the session carries on there.');
+  if (!r) return shell(S, S.mode === 'loading' ? 'Loading the session.' : 'Waiting for round 1. Claude posts it here in a moment.');
+  const closing = r.kind === 'closing';
+  const lede = closing ? 'Nothing is left open. Check the whole design below, then confirm it or say what is missing.'
+    : 'Answer each question here and press Submit. Claude reads your answers, writes any docs they settle, and posts the next round on this page.';
+  const past = S.rounds.filter(d => d.round > 1 && (d.settled.length || d.docsWritten.length));
+  return `<div class="wrap">
+    <header class="hdr"><span class="label">grill-with-artifact · round ${r.round}</span><h1>${esc(S.topic)}</h1><p class="lede">${lede}</p>
+      ${S.canEdit ? '' : '<p class="label">Only an editor of this page answers its rounds.</p>'}</header>
+    ${closing || !r.treeSvg ? '' : fig(r.treeSvg, r.treeCaption)}
+    ${past.map(d => pastRound(S, d, d === r)).join('')}
+    ${closing ? closingRound(S, r) : openQuestions(S, r)}
+  </div>${closing ? '' : bar(S, r)}`;
+}
+function shell(S, text) {
+  return `<div class="wrap"><header class="hdr"><span class="label">grill-with-artifact</span><h1>${esc(S.topic)}</h1></header><p class="notice panel" role="status">${text}</p></div>`;
+}
+function pastRound(S, d, latest) {
+  const n = k => d.settled.filter(s => s.how === k).length;
+  const how = Object.keys(HOW).filter(n).map(k => `${n(k)} ${HOW[k][+(n(k) !== 1)]}`).join(', ');
+  return `<section class="round"><div class="rhead"><h2>Round ${d.round - 1}</h2><span class="tag ok">settled · ${d.settled.length}</span></div>
+    ${d.settled.length ? `<details class="settled panel" ${latest ? 'open' : ''}><summary>Your answers${how ? ': ' + how : ''}</summary><ol>
+      ${d.settled.map(s => `<li><span class="qid">${esc(s.id)}</span><span><b>${esc(s.title)}:</b> ${md(s.answer)}<span class="how">${HOW[s.how]?.[0] ?? ''}</span></span><span>${settledCtl(S, s)}</span></li>`).join('')}
+    </ol></details>` : ''}
+    <div class="docs panel"><span class="label">Written to the repo</span>${d.docsWritten.length
+      ? `<ul>${d.docsWritten.map(w => `<li><code>${esc(w.file)}</code> ${md(w.summary)}</li>`).join('')}</ul>`
+      : '<p class="docs-none">Nothing new this round.</p>'}</div></section>`;
+}
+function settledCtl(S, s) {
+  const to = carriedTo(S, s.id), verb = s.how === 'defer' ? 'deferred' : 'reopened';
+  if (to) return `<span class="tag park">${verb} · ${to.open ? 'back as ' + esc(to.q) : 'back in round ' + to.round}</span>`;
+  if (s.how === 'defer') return '<span class="tag park">deferred</span>';
+  if (openRound(S).kind !== 'questions' || !S.canEdit) return '';
+  const on = S.draft.reopen.includes(s.id);
+  return `${on ? '<span class="tag accent">back next round</span> ' : ''}<button class="btn-link" data-act="reopen" data-id="${esc(s.id)}" aria-pressed="${on}" ${dis(S)}>${on ? 'Undo' : 'Reopen'}</button>`;
+}
+function openQuestions(S, r) {
+  return `<section class="round"><div class="rhead"><h2>Round ${r.round}</h2><span class="tag accent">open · ${r.questions.length} question${r.questions.length === 1 ? '' : 's'}</span>
+    <button class="btn-link" data-act="all" ${dis(S)}>Take all remaining recommendations</button></div>
+    ${r.questions.map((q, i) => card(S, q, r.round, `Question ${i + 1} of ${r.questions.length}`)).join('')}</section>`;
+}
+function carriedNote(q) {
+  const c = q.carriedFrom;
+  if (!c) return '';
+  if (c.reason === 'deferred') return `<p class="carried"><span class="tag park">Carried</span>You deferred this in round ${c.round} (${esc(c.id)}).</p>`;
+  return `<p class="carried"><span class="tag park">Reopened</span>You reopened ${esc(c.id)}. Your earlier answer: <b>${md(c.earlier)}</b></p>`;
+}
+function card(S, q, round, label) {
+  const a = ans(S, q.id), st = qstate(S, q);
+  const radio = v => `<input type="radio" name="q-${esc(q.id)}" id="q-${esc(q.id)}-${esc(v)}" value="${esc(v)}" data-q="${esc(q.id)}" ${a.choice === v ? 'checked' : ''}>`;
+  return `<article class="q panel" id="card-${esc(q.id)}" data-card="${esc(q.id)}" data-state="${st}">
+    <span class="label qn">${label}</span>
+    <div class="qhead"><span class="qid">${esc(q.id)}</span><h3>${esc(q.title)}</h3><span class="qtag" data-qtag="${esc(q.id)}" data-state="${st}">${QTAG[st]}</span></div>
+    ${carriedNote(q)}
+    ${q.figureSvg ? fig(q.figureSvg, q.figureCaption) : ''}
+    <fieldset class="opts" ${dis(S)}><legend class="sr">Answer for ${esc(q.id)}</legend>
+      ${q.options.map(o => `<label class="opt" for="q-${esc(q.id)}-${esc(o.id)}">${radio(o.id)}<span><span class="t">${esc(o.id)}. ${md(o.title)}${o.id === q.recommended ? '<span class="rec">Recommended</span>' : ''}</span>${o.detail ? `<span class="d">${md(o.detail)}</span>` : ''}</span></label>`).join('')}
+      <label class="opt" for="q-${esc(q.id)}-other">${radio('other')}<span><span class="t">Other</span>${a.choice === 'other'
+        ? `<input type="text" id="other-${esc(q.id)}" data-field="other" data-q="${esc(q.id)}" value="${esc(a.other)}" placeholder="Your answer" aria-label="Your answer for ${esc(q.id)}" ${dis(S)}>`
+        : '<span class="d">Give an answer none of these covers.</span>'}</span></label>
+      <label class="opt defer" for="q-${esc(q.id)}-defer">${radio('defer')}<span><span class="t">Defer</span><span class="d">Park it. It comes back in round ${round + 1}.</span></span></label>
+    </fieldset>
+    <div class="why"><span class="label">Why ${esc(q.recommended)}</span><p>${md(q.why)}</p></div>
+    <div class="foot"><label class="comment" for="comment-${esc(q.id)}"><span class="label">Comment (optional)</span>
+      <textarea id="comment-${esc(q.id)}" data-field="comment" data-q="${esc(q.id)}" rows="2" placeholder="Qualify your choice, or leave empty" ${dis(S)}>${esc(a.comment)}</textarea></label>
+      <button class="btn btn-sm" data-act="rec" data-q="${esc(q.id)}" ${dis(S)}>Take recommendation (${esc(q.recommended)})</button></div>
+  </article>`;
+}
+function bar(S, r) {
+  if (!S.canEdit) return '';
+  return `<div class="bar panel"><div class="bar-in">
+    <div class="tally"><span class="count"><b data-ready>${readyN(S, r)}</b> of ${r.questions.length} ready${S.draft.reopen.length ? ` · ${S.draft.reopen.length} to reopen` : ''}</span>
+      <button class="btn btn-sm jump" data-act="next" ${todoN(S, r) ? '' : 'hidden'}><span data-todo>${todoN(S, r)}</span> to answer <span aria-hidden="true">↓</span></button></div>
+    <div class="actions"><button class="btn" data-act="all" ${dis(S)}>Take all remaining</button>
+      <button class="btn accent" id="submit" data-act="submit" ${canSubmit(S) ? '' : 'disabled'}>Submit round ${r.round}</button></div>
+    ${status(S)}</div></div>`;
+}
+function closingRound(S, r) {
+  const decisions = S.rounds.flatMap(d => d.settled || []).filter(s => s.how !== 'defer' && !carriedTo(S, s.id)).length;
+  const c = ans(S, 'closing');
+  return `<section class="round"><div class="rhead"><h2>What we settled</h2><span class="tag ok">${r.round - 1} rounds · ${decisions} decisions</span></div>
+    <div class="summary panel">${r.summary.map(g => `<h3>${esc(g.heading)}</h3><p>${md(g.text)}</p>`).join('')}</div>
+    ${S.canEdit ? `<div class="summary panel"><h3>Is this the whole design?</h3><p>Confirm ends the session. Not yet sends Claude what is missing, and it posts another round.</p>
+      <div class="cl-ctl"><div class="cl-btns"><button class="btn accent" id="submit" data-act="confirm" ${dis(S)}>Confirm</button>
+        <button class="btn ${c.choice === 'not-yet' ? 'on' : ''}" data-act="notyet" ${dis(S)}>Not yet</button></div>
+      ${c.choice === 'not-yet' ? `<label class="cl-note" for="closing-note"><span class="label">What is missing or wrong?</span>
+        <textarea id="closing-note" data-field="comment" data-q="closing" rows="3" ${dis(S)}>${esc(c.comment)}</textarea></label>
+        <div class="cl-btns"><button class="btn accent" id="submit-notyet" data-act="submit" ${canSubmit(S) ? '' : 'disabled'}>Send to Claude</button></div>` : ''}
+      ${status(S)}</div></div>` : ''}</section>`;
+}
+function status(S) {
+  const n = S.draft.round, closing = openRound(S).kind === 'closing', confirmed = closing && ans(S, 'closing').choice === 'confirm';
+  switch (S.status) {
+    case 'sending': return '<div class="st st-sending" role="status"><span class="spin"></span>Saving your answers and waking Claude.</div>';
+    case 'sent': return `<div class="st st-ok" role="status"><span><b>${confirmed ? 'Confirmed.' : 'Sent to Claude.'}</b> ${confirmed ? 'Claude is wrapping up the session.' : `Claude is writing round ${n + 1}. It appears on this page; if it does not, type <code>submitted</code> in the terminal.`}</span></div>`;
+    case 'saved': return `<div class="st st-warn" role="alert"><span><b>Saved, but Claude was not woken.</b> Type <code>submitted</code> in the terminal and the session reads your saved answers.</span>
+      <div class="st-row"><button class="btn btn-sm" data-act="wake">Try waking it again</button></div></div>`;
+    case 'neither': return `<div class="st st-bad" role="alert"><span><b>Not saved and not sent.</b> Copy your answers and paste them into the terminal.</span>
+      <pre id="fallback-text">${esc(answersText(S))}</pre>
+      <div class="st-row"><button class="btn btn-sm accent" data-act="copy">Copy answers</button><button class="btn btn-sm" data-act="submit">Try again</button><span class="label" id="copied" role="status"></span></div></div>`;
+  }
+  if (S.submitted[n]) return `<div class="st st-ok" role="status"><span><b>Submitted.</b> ${confirmed ? 'The session is closing.' : `Waiting for round ${n + 1}. If it does not appear, type <code>submitted</code> in the terminal.`}</span></div>`;
+  return '';
+}
+
+/* ---- boot: the browser only. Wires the capabilities, the live rounds, drafts and Submit. ---- */
+if (typeof document !== 'undefined') boot();
+
+async function boot() {
+  const S = newState(document.title);
+  const app = document.getElementById('app');
+  const key = () => 'grill-draft-' + S.draft.round;
+  const saveDraft = () => { try { localStorage.setItem(key(), JSON.stringify(S.draft)); } catch (e) {} };
+  const loadDraft = () => { try { return JSON.parse(localStorage.getItem(key()) || 'null'); } catch (e) { return null; } };
+  // A figure is data from the database: parse it inert, then drop anything that could run.
+  function clean(root) {
+    root.querySelectorAll('.fig script, .fig foreignObject, .fig iframe').forEach(n => n.remove());
+    root.querySelectorAll('.fig *').forEach(n => { for (const a of [...n.attributes]) if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) n.removeAttribute(a.name); });
+  }
+  function render() {
+    const f = document.activeElement, fid = f && f.id;
+    const sel = f && typeof f.selectionStart === 'number' ? [f.selectionStart, f.selectionEnd] : null;
+    const t = document.createElement('template');
+    t.innerHTML = view(S);
+    clean(t.content);
+    app.replaceChildren(t.content);
+    const el = fid && document.getElementById(fid);
+    if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(...sel); } catch (e) {} }
+  }
+  function refresh() {
+    const r = openRound(S);
+    if (!r) return;
+    for (const q of r.questions || []) {
+      const st = qstate(S, q);
+      document.querySelectorAll(`[data-card="${CSS.escape(q.id)}"], [data-qtag="${CSS.escape(q.id)}"]`).forEach(el => { el.dataset.state = st; });
+      const tag = document.querySelector(`[data-qtag="${CSS.escape(q.id)}"]`);
+      if (tag) tag.textContent = QTAG[st];
+    }
+    if (r.questions) document.querySelectorAll('[data-ready]').forEach(el => { el.textContent = readyN(S, r); });
+    if (r.questions) document.querySelectorAll('[data-act="next"]').forEach(b => { b.hidden = !todoN(S, r); b.querySelector('[data-todo]').textContent = todoN(S, r); });
+    document.querySelectorAll('[data-act="submit"]').forEach(b => { b.disabled = !canSubmit(S); });
+    const ft = document.getElementById('fallback-text');
+    if (ft) ft.textContent = answersText(S);
+  }
+  render();
+
+  const use = n => (window.claude && window.claude.use ? window.claude.use(n).catch(() => null) : Promise.resolve(null));
+  const [db, comments, user] = await Promise.all([use('db'), use('comments'), use('user')]);
+  if (!db) { S.mode = 'nodb'; render(); return; }
+  if (user) S.canEdit = await user.canEdit().catch(() => true);
+
+  db.collection('rounds').orderBy('round').onSnapshot(snap => {
+    const was = S.draft && S.draft.round;
+    setRounds(S, snap.docs.map(d => d.data()));
+    if (S.draft && S.draft.round !== was) restoreDraft(S, loadDraft());
+    render();
+  }, () => { S.mode = 'nodb'; render(); });
+  db.collection('answers').onSnapshot(snap => { setAnswers(S, snap.docs.map(d => d.data())); render(); }, () => {});
+
+  // The comment is the doorbell: the one page action that starts a turn in the watching session.
+  // It carries the answers too, cut to the 4 KiB a comment holds.
+  function capped(text) {
+    const enc = new TextEncoder(), tail = `\n[cut to fit: read answers/round-${S.draft.round}]`;
+    if (enc.encode(text).length <= 4096) return text;
+    let s = text;
+    while (enc.encode(s + tail).length > 4096) s = s.slice(0, -64);
+    return s + tail;
+  }
+  async function wake(anchor) {
+    if (!comments || !anchor) return false;
+    try {
+      // `available` means this viewer may send, not that a session is watching: a send with no watch
+      // lands and wakes nothing, so the sent receipt still names the typed fallback.
+      if (await comments.canSendToClaude() !== 'available') return false;
+      await comments.sendToClaude({ anchor, text: capped(answersText(S)) });
+      return true;
+    } catch (e) { return false; }
+  }
+  // A Submit anchors on the button pressed (Confirm, Not yet or Submit); a retry anchors on the Submit it retries.
+  const anchorOf = el => (comments ? comments.anchorFor(el).catch(() => null) : Promise.resolve(null));
+  async function submit(btn) {
+    if (!canSubmit(S) && S.status !== 'neither') return;
+    // Lock before any await, so a second click finds the round locked. The render replaces the
+    // pressed button, so the anchor takes its re-rendered twin by id.
+    const doc = answersDoc(S);
+    S.status = 'sending'; render();
+    const anchor = await anchorOf(document.getElementById(btn.id) || btn);
+    const saved = await db.doc('answers/round-' + doc.round).set(doc).then(() => true, () => false);
+    const woke = await wake(anchor);
+    S.status = woke ? 'sent' : saved ? 'saved' : 'neither';
+    render();
+  }
+  async function rewake(btn) {
+    if (S.status !== 'saved') return;
+    S.status = 'sending'; render();
+    const anchor = await anchorOf(document.getElementById('submit-notyet') || document.getElementById('submit') || btn);
+    S.status = (await wake(anchor)) ? 'sent' : 'saved';
+    render();
+  }
+  const motion = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  // The first card left to answer (empty or incomplete), in page order: scrolled to, ringed, and focused.
+  function next() {
+    const c = document.querySelector('.q[data-state="empty"], .q[data-state="incomplete"]');
+    if (!c) return;
+    c.scrollIntoView({ block: 'center', behavior: motion() });
+    c.classList.add('flash');
+    setTimeout(() => c.classList.remove('flash'), 1500);
+    (c.querySelector('input[type="text"]') || c.querySelector('input'))?.focus({ preventScroll: true });
+  }
+  function copy() {
+    const note = t => { const c = document.getElementById('copied'); if (c) c.textContent = t; };
+    const selectIt = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById('fallback-text')); const s = getSelection(); s.removeAllRanges(); s.addRange(r); note('Selected: press Ctrl+C or Cmd+C'); };
+    try { navigator.clipboard.writeText(answersText(S)).then(() => note('Copied'), selectIt); } catch (e) { selectIt(); }
+  }
+
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-act]');
+    if (t && !t.disabled) {
+      const d = t.dataset, act = d.act;
+      if (act === 'submit') return submit(t);
+      if (act === 'wake') return rewake(t);
+      if (act === 'copy') return copy();
+      if (act === 'next') return next();
+      if (act === 'confirm') { ACT.closing(S, { choice: 'confirm' }); saveDraft(); return submit(t); }
+      if (act === 'notyet') { ACT.closing(S, { choice: 'not-yet' }); saveDraft(); render(); document.getElementById('closing-note')?.focus(); return; }
+      if (ACT[act]) { ACT[act](S, d); saveDraft(); render(); }
+      return;
+    }
+    const node = e.target.closest('svg [data-q]');
+    if (node) document.getElementById('card-' + node.dataset.q)?.scrollIntoView({ block: 'center', behavior: motion() });
+  });
+  document.addEventListener('change', e => {
+    const t = e.target;
+    if (!t.matches('input[type="radio"][data-q]')) return;
+    ACT.pick(S, { q: t.dataset.q, o: t.value }); saveDraft(); render();
+    if (t.value === 'other') document.getElementById('other-' + t.dataset.q)?.focus();
+  });
+  document.addEventListener('input', e => {
+    const t = e.target;
+    if (!t.dataset.field) return;
+    ACT.field(S, { q: t.dataset.q, field: t.dataset.field, value: t.value }); saveDraft(); refresh();
+  });
+}
+</script>
