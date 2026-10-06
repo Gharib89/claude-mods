@@ -144,7 +144,7 @@ EOF
 rung_edit() {
   local f files=''
   for f; do
-    case $f in "$root"/*) f=${f#"$root"/} ;; esac
+    case $f in "$root"/*) f=${f#"$root"/} ;; /*) continue ;; esac
     [ -f "$f" ] && matches "$f" "$EDIT_GLOBS" && ! excluded "$f" && files="$files$f$nl"
   done
   if [ -z "$files" ] || [ -z "$EDIT_RUN" ]; then record runner skipped; return; fi
@@ -211,7 +211,7 @@ rung_turn() {
     unset IFS
   fi
   for f; do
-    case $f in "$root"/*) f=${f#"$root"/} ;; esac
+    case $f in "$root"/*) f=${f#"$root"/} ;; /*) continue ;; esac
     o=$(owner "$f")
     case $o in
       '') ;;
