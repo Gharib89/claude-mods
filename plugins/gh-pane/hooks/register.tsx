@@ -1,16 +1,18 @@
 // gh-pane: `/gh-pane`, or the band's button above the prompt, docks a pane of the session repo's open issues and PRs
 // in run order. Its buttons fill the prompt with the next command and never send it: the person reads it and presses
-// Enter.
+// Enter. Two band buttons act on this session's own state instead, at its own merge gate: one sends the merge reply,
+// and once the PR is merged one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Issue, Snapshot } from '../types'
-import { readBacklog } from './github'
-import { fill, runLine } from './rules'
+import type { Gate, Issue, Snapshot } from '../types'
+import { isMerged, readBacklog, type Runner } from './github'
+import { commandOf, fill, gatePr, runLine } from './rules'
 
 const PANE = 'gh-pane'
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
+const gate = atom({ plugin: 'gh-pane', key: 'gate' } as const, null)
 
 type E = Pick<Elements['terminal'], 'Box' | 'Text' | 'Button' | 'Link'>
 type Config = ReturnType<typeof configOf>
@@ -27,6 +29,9 @@ const configOf = (o: PluginOptions) => ({
   shipCommand: String(o.shipCommand),
   triageCommand: String(o.triageCommand),
   releaseRequest: String(o.releaseRequest),
+  closeRequest: String(o.closeRequest),
+  gateText: String(o.gateText),
+  mergeReply: String(o.mergeReply),
   buttonIcon: String(o.buttonIcon),
 })
 
@@ -42,21 +47,25 @@ let reads = 0
 // and draws only in the folder it was read in: one process may host more than one session.
 let kept: { cwd: string; view: Snapshot } | null = null
 
-async function refresh($: EngineInterface, config: Config) {
+const runnerOf = ($: EngineInterface): Runner => async argv => {
+  const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
+    throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
+  })
+  if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
+  return stdout
+}
+
+// Answers the snapshot it read, landed or not: a read overtaken by a newer one is still fresh for its caller.
+async function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
   const ticket = ++reads
   const cwd = await $.session.cwd()
-  const run = async (argv: string[]) => {
-    const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
-      throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
-    })
-    if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
-    return stdout
-  }
+  const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  if (ticket !== reads) return
+  if (ticket !== reads) return next
   kept = { cwd, view: next }
   await update($, snapshot, () => next)
+  return next
 }
 
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
@@ -95,15 +104,16 @@ async function propose($: EngineInterface, text: string) {
 }
 
 /**
- * A row's state, first match wins. A map ticket (a sub-issue of a map) left open, unblocked, unclaimed and waiting on
- * neither triage nor info is next.
+ * A row's state, first match wins. An issue whose sub-issues are all closed waits only on its own close. A map ticket
+ * (a sub-issue of a map) left open, unblocked, unclaimed and waiting on neither triage nor info is next.
  */
 function stateOf(
   issue: Issue,
   config: Config,
   isMapTicket: boolean,
-): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true; isNext?: true } {
+): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true; isNext?: true; isDone?: true } {
   if (issue.pr !== undefined) return { tag: 'in PR ', color: 'cyan', pr: issue.pr }
+  if (issue.subs.total > 0 && issue.subs.done === issue.subs.total) return { tag: 'all done', color: 'green', isDone: true }
   if (issue.blockers.length > 0) return { tag: 'blocked by ', color: 'yellow', blockers: issue.blockers }
   if (issue.assignees.length > 0) return { tag: `claimed (${issue.assignees.join(', ')})`, color: 'blue' }
   if (issue.labels.includes(config.readyForAgent)) return { tag: 'ready now', color: 'green', isReady: true }
@@ -111,12 +121,109 @@ function stateOf(
   const waiting = issue.labels.find(l => l === config.needsTriage || l === config.needsInfo)
   if (waiting !== undefined) return { tag: waiting, color: 'gray' }
   if (issue.labels.includes(config.mapLabel)) return { tag: 'map', color: 'gray' }
-  if (isMapTicket) return { tag: 'next', color: 'green', isNext: true }
+  if (isMapTicket) return { tag: 'ready now', color: 'green', isNext: true }
   return { tag: 'untriaged', color: 'gray' }
+}
+
+type Open = Exclude<Snapshot, { error: string }>
+
+const has = (issue: Issue, label: string) => issue.labels.includes(label)
+
+/** The pane's order: each root's tree, then the lone issues waiting on triage or info. */
+function arrange(view: Open, config: Config) {
+  const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
+  // A map and its tickets at every depth resolve by a closing comment, never a PR.
+  const mapOf = (issue: Issue): number | undefined =>
+    has(issue, config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
+  const isMapTicket = (issue: Issue) => mapOf(issue) !== undefined && !has(issue, config.mapLabel)
+  // A spec tree draws in place whatever its root's label; a lone issue waiting on triage or info waits below.
+  const top = view.issues.filter(issue => issue.parent === undefined)
+  const isWaiting = (issue: Issue, label: string) => issue.subs.total === 0 && has(issue, label)
+  const roots = top.filter(issue => !isWaiting(issue, config.needsTriage) && !isWaiting(issue, config.needsInfo))
+  const waiting = [
+    { name: 'needs triage', issues: top.filter(issue => isWaiting(issue, config.needsTriage)), canTriage: true },
+    { name: 'needs info', issues: top.filter(issue => isWaiting(issue, config.needsInfo)), canTriage: false },
+  ]
+  return { byNumber, mapOf, isMapTicket, roots, waiting }
+}
+
+/** The command of the first row in the pane's order whose button starts work: a ready issue's ship or a map's next. */
+function nextCommand(view: Open, config: Config): string | undefined {
+  const { byNumber, mapOf, isMapTicket, roots, waiting } = arrange(view, config)
+  const walk = (issue: Issue): Issue[] => [issue, ...issue.children.flatMap(n => walk(byNumber.get(n)!))]
+  for (const issue of [...roots.flatMap(walk), ...waiting.flatMap(group => group.issues)]) {
+    const state = stateOf(issue, config, isMapTicket(issue))
+    if (state.isReady) return fill(config.shipCommand, { n: issue.number })
+    if (state.isNext) return fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number })
+  }
+  return undefined
+}
+
+const setGate = ($: EngineInterface, to: Gate | null) => update($, gate, () => to)
+
+// Sends the reply as the person's own words. The mod's own prompt.submit hook never sees a plugin's call (seen in the
+// types of 2.1.291), so the press marks the merging itself.
+async function pressMerge($: EngineInterface, config: Config, at: Gate) {
+  await setGate($, { ...at, phase: 'merging' })
+  try {
+    await $.prompt.submit({ text: config.mergeReply, asUser: true })
+  } catch (error) {
+    await setGate($, at)
+    throw error
+  }
+}
+
+// The merge reply's turn ended: the PR itself says whether it merged (a stale-base or a no leaves it open), and a
+// fresh read, pane open or not, picks the next command.
+async function settleMerge($: EngineInterface, config: Config, pr: number) {
+  try {
+    if (!(await isMerged(runnerOf($), pr))) return await setGate($, null)
+    const view = await refresh($, config)
+    const text = 'error' in view ? undefined : nextCommand(view, config)
+    const run = text === undefined ? undefined : commandOf(text)
+    await setGate($, { pr, phase: 'merged', next: text === undefined || run === undefined ? undefined : { text, ...run } })
+  } catch (error) {
+    await setGate($, null)
+    $.ui.toast(`gh-pane could not read PR #${pr}: ${messageOf(error)}`)
+  }
+}
+
+// Seen on 2.1.291: `$.command.run` works from a button press but is refused inside a `command.run` hook, no
+// `session.start` fires after a /clear, and `$.prompt.submit` refuses text starting with `/`. So the next button runs
+// the whole chain inside one press: /clear, then the command as a command.
+async function pressNext($: EngineInterface, next: NonNullable<Gate['next']>) {
+  await setGate($, null)
+  await $.command.run({ command: 'clear' })
+  await $.command.run({ command: next.command, args: next.args })
 }
 
 export const register: Register = (on, options) => {
   const config = configOf(options)
+
+  // A main-loop answer carrying the gate text puts this session at the gate; a subagent's turn is no gate of it.
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    if (e.agentId !== undefined) return done
+    const pr = gatePr(e.answer, config.gateText)
+    if (pr !== undefined) await setGate($, { pr, phase: 'gate' })
+    else {
+      const at = await read($, gate)
+      if (at?.phase === 'merging') void settleMerge($, config, at.pr)
+    }
+    return done
+  })
+
+  // A typed reply: the merge word counts as the button's press, anything else hides the button until the gate returns.
+  on('prompt.submit', async ($, e, next) => {
+    const at = await read($, gate)
+    if (at?.phase === 'gate') await setGate($, e.text.trim() === config.mergeReply ? { ...at, phase: 'merging' } : null)
+    return next(e)
+  })
+
+  on('session.end', async ($, e, next) => {
+    await setGate($, null)
+    return next(e)
+  })
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -145,18 +252,26 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
-    const { Box, Button }: E = $.ui.resolve(e)
-    // An unreadable pane list reads as closed: a throw here would take the band of every plugin beneath with it.
+    const { Box, Text, Button }: E = $.ui.resolve(e)
+    // An unreadable pane list or gate reads as closed: a throw here would take the band of every plugin beneath with it.
     const shown = await isOpen($).catch(() => false)
+    const at = await read($, gate).catch(() => null)
+    const upNext = at?.phase === 'merged' ? at.next : undefined
+    const toast = (error: unknown) => $.ui.toast(`gh-pane: ${messageOf(error)}`)
     return (
       <Box flexDirection="column">
         {below}
-        <Button
-          key="toggle"
-          plain
-          label={`${shown ? 'Hide' : 'Open'} gh-pane ${config.buttonIcon}`.trim()}
-          onPress={() => (shown ? hide($) : show($, config)).catch(error => $.ui.toast(`gh-pane: ${messageOf(error)}`))}
-        />
+        <Box gap={2}>
+          <Button
+            key="toggle"
+            plain
+            label={`${shown ? 'Hide' : 'Open'} gh-pane ${config.buttonIcon}`.trim()}
+            onPress={() => (shown ? hide($) : show($, config)).catch(toast)}
+          />
+          {at?.phase === 'gate' && <Button key="merge" hotkey="m" label={`merge PR #${at.pr}`} onPress={() => pressMerge($, config, at).catch(toast)} />}
+          {at?.phase === 'merging' && <Text color="cyan">{`merging PR #${at.pr}…`}</Text>}
+          {upNext && <Button key="next" hotkey="n" label={`clear + ${upNext.text}`} onPress={() => pressNext($, upNext).catch(toast)} />}
+        </Box>
       </Box>
     )
   })
@@ -186,12 +301,7 @@ export const register: Register = (on, options) => {
     }
     if (view.issues.length === 0 && view.prs === 0) return <Text dimColor>{`Nothing open in ${view.repo}.`}</Text>
 
-    const byNumber = new Map(view.issues.map(issue => [issue.number, issue]))
-    const has = (issue: Issue, label: string) => issue.labels.includes(label)
-    // A map and its tickets at every depth resolve by a closing comment, never a PR.
-    const mapOf = (issue: Issue): number | undefined =>
-      has(issue, config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
-    const isMapTicket = (issue: Issue) => mapOf(issue) !== undefined && !has(issue, config.mapLabel)
+    const { byNumber, mapOf, isMapTicket, roots, waiting } = arrange(view, config)
     const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
       <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
     )
@@ -242,6 +352,14 @@ export const register: Register = (on, options) => {
               onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
             />
           )}
+          {state.isDone && (
+            <Button
+              key={`close-${issue.number}`}
+              plain
+              label="close"
+              onPress={() => propose($, fill(config.closeRequest, { n: issue.number, total: issue.subs.total }))}
+            />
+          )}
           {has(issue, config.needsTriage) && (
             <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
           )}
@@ -273,15 +391,6 @@ export const register: Register = (on, options) => {
         const child = byNumber.get(n)!
         return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
       }),
-    ]
-
-    // A spec tree draws in place whatever its root's label; a lone issue waiting on triage or info waits below.
-    const top = view.issues.filter(issue => issue.parent === undefined)
-    const isWaiting = (issue: Issue, label: string) => issue.subs.total === 0 && has(issue, label)
-    const roots = top.filter(issue => !isWaiting(issue, config.needsTriage) && !isWaiting(issue, config.needsInfo))
-    const waiting = [
-      { name: 'needs triage', issues: top.filter(issue => isWaiting(issue, config.needsTriage)), canTriage: true },
-      { name: 'needs info', issues: top.filter(issue => isWaiting(issue, config.needsInfo)), canTriage: false },
     ]
 
     return (

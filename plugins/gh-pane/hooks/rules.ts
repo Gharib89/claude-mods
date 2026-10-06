@@ -46,3 +46,15 @@ export const closesOf = (body: string): number[] =>
 /** A template with each `{key}` replaced by its value. */
 export const fill = (template: string, values: Record<string, string | number>): string =>
   template.replace(/\{(\w+)\}/g, (whole, key: string) => (Object.hasOwn(values, key) ? String(values[key]) : whole))
+
+/** The PR a merge-gate answer names: the number in its first `/pull/<N>`, when the answer carries the gate text. */
+export function gatePr(answer: string, gateText: string): number | undefined {
+  const n = answer.includes(gateText) ? /\/pull\/(\d+)/.exec(answer)?.[1] : undefined
+  return n === undefined ? undefined : Number(n)
+}
+
+/** A slash command's name and args, or undefined for text that is no command. */
+export function commandOf(text: string): { command: string; args: string } | undefined {
+  const match = /^\/(\S+)(?:\s+(.*))?$/s.exec(text.trim())
+  return match === null ? undefined : { command: match[1]!, args: match[2] ?? '' }
+}
