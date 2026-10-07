@@ -31,6 +31,7 @@ const configOf = (o: PluginOptions) => ({
   releaseRequest: String(o.releaseRequest),
   closeRequest: String(o.closeRequest),
   gateText: String(o.gateText),
+  mergedText: String(o.mergedText),
   mergeReply: String(o.mergeReply),
   buttonIcon: String(o.buttonIcon),
 })
@@ -201,12 +202,15 @@ async function pressNext($: EngineInterface, next: NonNullable<Gate['next']>) {
 export const register: Register = (on, options) => {
   const config = configOf(options)
 
-  // A main-loop answer carrying the gate text puts this session at the gate; a subagent's turn is no gate of it.
+  // A main-loop answer carrying the gate text puts this session at the gate, and one carrying the merged text says the
+  // run merged on its own, past any gate; a subagent's turn is neither.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (e.agentId !== undefined) return done
+    const merged = gatePr(e.answer, config.mergedText)
     const pr = gatePr(e.answer, config.gateText)
-    if (pr !== undefined) await setGate($, { pr, phase: 'gate' })
+    if (merged !== undefined) void settleMerge($, config, merged)
+    else if (pr !== undefined) await setGate($, { pr, phase: 'gate' })
     else {
       const at = await read($, gate)
       if (at?.phase === 'merging') void settleMerge($, config, at.pr)

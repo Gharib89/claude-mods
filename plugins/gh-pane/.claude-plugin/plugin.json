@@ -1,6 +1,6 @@
 {
   "name": "gh-pane",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A docked pane of the session repo's issues and PRs in run order, with buttons that fill the next command, plus two for this session's merge gate: send the merge reply, then clear and run the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",
@@ -18,6 +18,7 @@
     "releaseRequest": { "type": "string", "title": "Release request", "description": "What a stale claim's release button fills; {n} is the issue number, {user} its assignees.", "default": "Release the ship claim on #{n}: unassign {user} and comment that the claim went stale with no PR." },
     "closeRequest": { "type": "string", "title": "Close request", "description": "What an all-done issue's close button fills; {n} is the issue number, {total} its sub-issue count.", "default": "Close #{n}: all {total} of its sub-issues are closed." },
     "gateText": { "type": "string", "title": "Merge-gate text", "description": "The text a main-loop answer carries when this session waits at a merge gate, with the PR's link in it; it shows the merge button.", "default": "Reply \"merge\"" },
+    "mergedText": { "type": "string", "title": "Merged text", "description": "The text a main-loop answer carries when a ship run merged its PR on its own, with the PR's link in it; once the PR reads merged, it shows the next button.", "default": "Merged on a clean gate:" },
     "mergeReply": { "type": "string", "title": "Merge reply", "description": "The reply the merge button sends at the gate, and the typed reply that counts as the same.", "default": "merge" },
     "buttonIcon": { "type": "string", "title": "Band button icon", "description": "What follows Open gh-pane or Hide gh-pane on the button above the prompt. The default is the GitHub mark of a Nerd Font (U+F408); leave it empty where the terminal's font has no Nerd Font glyphs.", "default": "\uf408" }
   }

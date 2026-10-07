@@ -47,9 +47,9 @@ export const closesOf = (body: string): number[] =>
 export const fill = (template: string, values: Record<string, string | number>): string =>
   template.replace(/\{(\w+)\}/g, (whole, key: string) => (Object.hasOwn(values, key) ? String(values[key]) : whole))
 
-/** The PR a merge-gate answer names: the number in its first `/pull/<N>`, when the answer carries the gate text. */
-export function gatePr(answer: string, gateText: string): number | undefined {
-  const n = answer.includes(gateText) ? /\/pull\/(\d+)/.exec(answer)?.[1] : undefined
+/** The PR a merge-gate or merged answer names: the number in its first `/pull/<N>`, when the answer carries `text`. */
+export function gatePr(answer: string, text: string): number | undefined {
+  const n = answer.includes(text) ? /\/pull\/(\d+)/.exec(answer)?.[1] : undefined
   return n === undefined ? undefined : Number(n)
 }
 

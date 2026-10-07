@@ -681,6 +681,56 @@ test('a PR that did not merge, or no ready row, shows no next button', async ($,
   expect(await band.find({ text: /merging/ })).toBeUndefined()
 })
 
+const OWN_MERGE = 'Timing: 41 min\nMerged on a clean gate: https://github.com/acme/widgets/pull/42'
+
+test('a main-loop answer that ship merged on its own shows the next button, and no merge button', async ($, on) => {
+  const { calls, pulls, ran, fixture, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  fixture.issues = [issue(8, ['ready-for-agent'])]
+  pulls[42] = true
+  await answer($, OWN_MERGE)
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  await clock.settle()
+
+  expect((await band.find({ key: 'next' }))?.props.label).toBe('clear + /ship 8')
+  expect(calls).toContainEqual(['gh', 'api', 'repos/{owner}/{repo}/pulls/42', '--jq', '.merged'])
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  await band.press({ key: 'next' })
+  expect(ran).toEqual([{ command: 'clear', args: '' }, { command: 'ship', args: '8' }])
+})
+
+test('an own-merge answer whose PR reads not merged, or from a subagent, shows nothing', async ($, on) => {
+  const { pulls, calls, fixture, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  fixture.issues = [issue(8, ['ready-for-agent'])]
+
+  await answer($, OWN_MERGE)
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(await band.find({ key: 'merge' })).toBeUndefined()
+  expect(await band.find({ text: /merging/ })).toBeUndefined()
+
+  pulls[42] = true
+  calls.length = 0
+  await answer($, OWN_MERGE, 'agent-1')
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  expect(calls.filter(argv => argv.at(-2) === '--jq')).toEqual([])
+})
+
+test('the own-merge text follows its userConfig', { options: { mergedText: 'Shipped:' } }, async ($, on) => {
+  const { pulls, fixture, clock } = host(on)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  fixture.issues = [issue(8, ['ready-for-agent'])]
+  pulls[42] = true
+  await answer($, OWN_MERGE)
+  await clock.settle()
+  expect(await band.find({ key: 'next' })).toBeUndefined()
+  await answer($, 'Shipped: https://github.com/acme/widgets/pull/42')
+  await clock.settle()
+  expect((await band.find({ key: 'next' }))?.props.label).toBe('clear + /ship 8')
+})
+
 test('the session ending clears the gate', async ($, on) => {
   host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
