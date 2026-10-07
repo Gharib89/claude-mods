@@ -681,14 +681,14 @@ test('a PR that did not merge, or no ready row, shows no next button', async ($,
   expect(await band.find({ text: /merging/ })).toBeUndefined()
 })
 
-const OWN_MERGE = 'Timing: 41 min\nMerged on a clean gate: https://github.com/acme/widgets/pull/42'
+const MERGED_ON_GATE = 'Timing: 41 min\nMerged on a clean gate: https://github.com/acme/widgets/pull/42'
 
-test('a main-loop answer that ship merged on its own shows the next button, and no merge button', async ($, on) => {
+test('a main-loop answer with the merged text shows the next button, and no merge button', async ($, on) => {
   const { calls, pulls, ran, fixture, clock } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   fixture.issues = [issue(8, ['ready-for-agent'])]
   pulls[42] = true
-  await answer($, OWN_MERGE)
+  await answer($, MERGED_ON_GATE)
   expect(await band.find({ key: 'merge' })).toBeUndefined()
   await clock.settle()
 
@@ -699,12 +699,12 @@ test('a main-loop answer that ship merged on its own shows the next button, and 
   expect(ran).toEqual([{ command: 'clear', args: '' }, { command: 'ship', args: '8' }])
 })
 
-test('an own-merge answer whose PR reads not merged, or from a subagent, shows nothing', async ($, on) => {
+test('a merged-text answer whose PR reads not merged, or from a subagent, shows nothing', async ($, on) => {
   const { pulls, calls, fixture, clock } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   fixture.issues = [issue(8, ['ready-for-agent'])]
 
-  await answer($, OWN_MERGE)
+  await answer($, MERGED_ON_GATE)
   await clock.settle()
   expect(await band.find({ key: 'next' })).toBeUndefined()
   expect(await band.find({ key: 'merge' })).toBeUndefined()
@@ -712,18 +712,18 @@ test('an own-merge answer whose PR reads not merged, or from a subagent, shows n
 
   pulls[42] = true
   calls.length = 0
-  await answer($, OWN_MERGE, 'agent-1')
+  await answer($, MERGED_ON_GATE, 'agent-1')
   await clock.settle()
   expect(await band.find({ key: 'next' })).toBeUndefined()
   expect(calls.filter(argv => argv.at(-2) === '--jq')).toEqual([])
 })
 
-test('the own-merge text follows its userConfig', { options: { mergedText: 'Shipped:' } }, async ($, on) => {
+test('the merged text follows its userConfig', { options: { mergedText: 'Shipped:' } }, async ($, on) => {
   const { pulls, fixture, clock } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   fixture.issues = [issue(8, ['ready-for-agent'])]
   pulls[42] = true
-  await answer($, OWN_MERGE)
+  await answer($, MERGED_ON_GATE)
   await clock.settle()
   expect(await band.find({ key: 'next' })).toBeUndefined()
   await answer($, 'Shipped: https://github.com/acme/widgets/pull/42')
