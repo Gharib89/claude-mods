@@ -27,7 +27,7 @@ export type Snapshot =
   | { repo: string; issues: Issue[]; prs: number; fetchedAt: string }
   | { error: string }
 
-/** Where this session stands at a ship run's merge gate: the PR it names and what the band offers. */
+/** Where this session stands at a ship run's merge gate, or once a ship run merged on its own: the PR and the band's offer. */
 export type Gate = {
   pr: number
   phase: 'gate' | 'merging' | 'merged'

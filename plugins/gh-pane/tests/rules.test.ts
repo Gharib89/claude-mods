@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { closesOf, commandOf, fill, gatePr, runLine, worktreeIssue } from '../hooks/rules'
+import { closesOf, commandOf, fill, gatePr, mergedPrOf, runLine, worktreeIssue } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
@@ -91,6 +91,16 @@ test('a gate answer names its PR by the first /pull/N, and only with the gate te
   // The number ends at its digits, and `/pulls/7` is no PR path.
   expect(gatePr(`${text} /pull/42abc`, text)).toBe(42)
   expect(gatePr(`${text} /pulls/7`, text)).toBeUndefined()
+})
+
+test('a merged answer names its PR by the first /pull/N after the merged text, never one before it', () => {
+  const text = 'Merged on a clean gate:'
+  expect(mergedPrOf(`See https://github.com/a/b/pull/7\n${text} https://github.com/a/b/pull/42`, text)).toBe(42)
+  expect(mergedPrOf(`${text} https://github.com/a/b/pull/42 and https://github.com/a/b/pull/7`, text)).toBe(42)
+  expect(mergedPrOf(`https://github.com/a/b/pull/42\n${text}`, text)).toBeUndefined()
+  expect(mergedPrOf('Merged https://github.com/a/b/pull/42', text)).toBeUndefined()
+  // Only the merged line's own link counts: a link on a later line is some other PR.
+  expect(mergedPrOf(`${text} (no link)\nSee https://github.com/a/b/pull/7`, text)).toBeUndefined()
 })
 
 test('a slash command splits into its name and args, and other text is no command', () => {

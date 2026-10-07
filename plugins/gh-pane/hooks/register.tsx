@@ -1,14 +1,14 @@
 // gh-pane: `/gh-pane`, or the band's button above the prompt, docks a pane of the session repo's open issues and PRs
 // in run order. Its buttons fill the prompt with the next command and never send it: the person reads it and presses
-// Enter. Two band buttons act on this session's own state instead, at its own merge gate: one sends the merge reply,
-// and once the PR is merged one clears the session and runs the next command.
+// Enter. Two band buttons act on this session's own state instead: at its own merge gate one sends the merge reply,
+// and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
-import { commandOf, fill, gatePr, runLine } from './rules'
+import { commandOf, fill, gatePr, mergedPrOf, runLine } from './rules'
 
 const PANE = 'gh-pane'
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
@@ -31,6 +31,7 @@ const configOf = (o: PluginOptions) => ({
   releaseRequest: String(o.releaseRequest),
   closeRequest: String(o.closeRequest),
   gateText: String(o.gateText),
+  mergedText: String(o.mergedText),
   mergeReply: String(o.mergeReply),
   buttonIcon: String(o.buttonIcon),
 })
@@ -173,8 +174,8 @@ async function pressMerge($: EngineInterface, config: Config, at: Gate) {
   }
 }
 
-// The merge reply's turn ended: the PR itself says whether it merged (a stale-base or a no leaves it open), and a
-// fresh read, pane open or not, picks the next command.
+// The merge reply's turn, or one carrying the merged text, ended: the PR itself says whether it merged (a stale-base
+// or a no leaves it open), and a fresh read, pane open or not, picks the next command.
 async function settleMerge($: EngineInterface, config: Config, pr: number) {
   try {
     if (!(await isMerged(runnerOf($), pr))) return await setGate($, null)
@@ -201,12 +202,15 @@ async function pressNext($: EngineInterface, next: NonNullable<Gate['next']>) {
 export const register: Register = (on, options) => {
   const config = configOf(options)
 
-  // A main-loop answer carrying the gate text puts this session at the gate; a subagent's turn is no gate of it.
+  // A main-loop answer carrying the gate text puts this session at the gate, and one carrying the merged text says a
+  // ship run merged on its own, with no gate to answer; a subagent's turn is neither.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (e.agentId !== undefined) return done
+    const mergedPr = mergedPrOf(e.answer, config.mergedText)
     const pr = gatePr(e.answer, config.gateText)
-    if (pr !== undefined) await setGate($, { pr, phase: 'gate' })
+    if (mergedPr !== undefined) void settleMerge($, config, mergedPr)
+    else if (pr !== undefined) await setGate($, { pr, phase: 'gate' })
     else {
       const at = await read($, gate)
       if (at?.phase === 'merging') void settleMerge($, config, at.pr)

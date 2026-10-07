@@ -53,6 +53,12 @@ export function gatePr(answer: string, gateText: string): number | undefined {
   return n === undefined ? undefined : Number(n)
 }
 
+/** The PR a merged answer names: the first `/pull/<N>` after the merged text on that text's line, as ship's merged line ends. */
+export function mergedPrOf(answer: string, mergedText: string): number | undefined {
+  const at = answer.indexOf(mergedText)
+  return at === -1 ? undefined : gatePr(answer.slice(at).split('\n')[0]!, mergedText)
+}
+
 /** A slash command's name and args, or undefined for text that is no command. */
 export function commandOf(text: string): { command: string; args: string } | undefined {
   const match = /^\/(\S+)(?:\s+(.*))?$/s.exec(text.trim())
