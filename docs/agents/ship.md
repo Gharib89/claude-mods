@@ -63,6 +63,7 @@ Each mod carries its own `version` in its `plugin.json`; no release tooling read
 ## PR
 
 Template: .github/pull_request_template.md
+Merge: on-clean-gate
 
 ## Public surface
 
