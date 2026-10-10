@@ -7,6 +7,30 @@ released version. See
 
 <!-- version list -->
 
+## v0.10.1 (2026-10-10)
+
+### Bug Fixes
+
+- **setup-harness**: Run the full runner alone first, bound check.sh paths by real path
+  ([#542](https://github.com/Gharib89/skills/pull/542),
+  [`3c391a1`](https://github.com/Gharib89/skills/commit/3c391a14a9784f395b905825b3013f9f16be2454))
+
+
+## v0.10.0 (2026-10-08)
+
+### Bug Fixes
+
+- **setup-harness**: Refresh the apt index before an apt route's install
+  ([#512](https://github.com/Gharib89/skills/pull/512),
+  [`a5200c5`](https://github.com/Gharib89/skills/commit/a5200c5c055d62879871f883343a20b30d9388f2))
+
+### Features
+
+- **setup-harness**: Run the full rung's rows concurrently
+  ([#524](https://github.com/Gharib89/skills/pull/524),
+  [`a215272`](https://github.com/Gharib89/skills/commit/a215272b10716b046fc8905bcd27e1841371a9d0))
+
+
 ## v0.9.4 (2026-10-05)
 
 ### Bug Fixes

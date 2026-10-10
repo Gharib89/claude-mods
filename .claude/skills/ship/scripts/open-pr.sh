@@ -9,6 +9,14 @@
 # link when the body lacks one aimed at this issue. Re-running after a flake
 # returns the PR the first call created.
 #
+# Grade check. Where the issue's Run file records a `Grade: minor` or `Grade:
+# breaking`, a title whose type grades patch (anything but `feat` or a `!`) is
+# refused before the push, naming the recorded grade and the type to use. No
+# Run file, no Grade line, `none` or a title that is no Conventional Commit is no
+# check. The Run file is read at `<git common dir>/ship/ship-<issue>/run.md`, so a
+# run started with `run-file --scratchpad <dir>` keeps its Run file elsewhere and
+# is not checked.
+#
 # `created_at` is the PR's creation time, which is when an `auto-once` reviewer
 # fires: phase 7 passes it to `poll-pr --since` so that one round counts on
 # whatever head it lands on.
@@ -18,7 +26,7 @@
 # failure.
 #
 # stdout: {number, url, created_at, branch, base}
-# exit: 0 · 1 push or create failed · 2 usage or wrong branch
+# exit: 0 · 1 title grades below the recorded Grade, or push or create failed · 2 usage or wrong branch
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 usage='usage: open-pr <issue|none> --title "<subject>" --body-file <path>'
@@ -44,6 +52,7 @@ fi
 base=$(ship_base_ref) || ship_tooling "cannot resolve origin/HEAD"
 base=${base#origin/}
 [ "$branch" != "$base" ] || ship_tooling "refusing to open a PR from the base branch $base"
+[ "$n" = none ] || ship_require_grade "$n" "$title"
 
 log=$(mktemp); trap 'rm -f "$log"' EXIT
 git push -u origin "HEAD:refs/heads/$branch" >"$log" 2>&1 || { ship_tail40 "$log"; ship_fail "git push failed"; }

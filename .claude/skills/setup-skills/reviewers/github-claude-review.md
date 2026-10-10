@@ -3,7 +3,7 @@
 Scaffold for a repo whose ship profile names Claude Code as a reviewer. It comes in two shapes, on-push and on-request, and a repo takes exactly one; the on-request shape stands alone or as another reviewer's fallback:
 
 - **The on-push shape.** Claude is the only reviewer and reviews every push to an open PR, so it is the whole second pair of eyes, and its job lands a check run on the PR head.
-- **The on-request shape.** A PR comment is the trigger, so nothing fires until a round is asked for. Standalone (`Fallback-for: None.`), it is the repo's reviewer and ship asks for each round, so the cap binds and a small-lane run spends one round. As a fallback, the repo already has a reviewer (Copilot, CodeRabbit) and this one stands in for it on the month its quota runs out, so nothing fires while the primary is healthy. A fallback is on-request because a workflow that fires on every push cannot be withheld while the primary is healthy.
+- **The on-request shape.** A PR comment is the trigger, so nothing fires until a round is asked for. Standalone (`Fallback-for: None.`), it is the repo's reviewer and ship asks for each round, so the cap binds and a small-lane run spends one round. As a fallback, the repo already has a reviewer (Copilot, CodeRabbit) and this one stands in for it on the month its quota runs out, or on a run where the primary is capped with findings (its cap spent, the last round's fixes changing the tree), so nothing fires while the primary reviews and converges. A fallback is on-request because a workflow that fires on every push cannot be withheld while the primary is healthy.
 
 What both shapes do the same way, because ship reads a round off the host alone:
 
@@ -71,7 +71,7 @@ jobs:
           persist-credentials: false
 
       - id: review
-        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -257,7 +257,7 @@ Instructions: __INSTRUCTIONS__
 
 ## The on-request shape
 
-Replace `__PHRASE__` with the phrase that triggers a round, `@claude` unless something else in the repo already answers to it, and, in the fallback block, `__PRIMARY__` with the `### <name>` of the reviewer this one stands in for, exactly as the profile spells it. Both must agree with the profile: ship posts `__PHRASE__` as a PR comment and nothing else starts a round, and it requests a fallback only when `__PRIMARY__` exits `not reviewed`. The `if:` tests for the phrase anywhere in a comment body, so any comment that merely mentions it, a quote of an earlier request included, spends a round: pick a phrase nobody types in passing.
+Replace `__PHRASE__` with the phrase that triggers a round, `@claude` unless something else in the repo already answers to it, and, in the fallback block, `__PRIMARY__` with the `### <name>` of the reviewer this one stands in for, exactly as the profile spells it. Both must agree with the profile: ship posts `__PHRASE__` as a PR comment and nothing else starts a round, and it requests a fallback only when `__PRIMARY__` exits `not reviewed` or is capped with findings: it spent its `Cap:` and the last round's fixes changed the tree. The `if:` tests for the phrase anywhere in a comment body, so any comment that merely mentions it, a quote of an earlier request included, spends a round: pick a phrase nobody types in passing.
 
 ### `.github/workflows/claude-review.yml`
 
@@ -314,7 +314,7 @@ jobs:
           persist-credentials: false
 
       - id: review
-        uses: anthropics/claude-code-action@cfc3eb22bfed5c26ef66e3223c982af27e4524de # v1.0.231
+        uses: anthropics/claude-code-action@58985842b834ed26087302ba27d07bc24ca8697a # v1.0.244
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -492,7 +492,7 @@ Both shared steps above, then:
    ```
 
    Weigh it first: whatever identity a ship run requests a round under must fall inside that list, and an unattended run whose identity does not gets no review. Ship grades that `never-queued` rather than reading the reviewer as silent, so the loss is named; naming it is not reviewing the PR, which is what this reviewer is there for. A private repo where every commenter can already push needs no commenter line.
-6. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds. Ship grades a failed round here `infra-error` from the run read either way, so dropping the step costs the link on the PR: the human then goes to the Actions tab to find the run themselves. A run asks for this reviewer when it needs the review, standalone or covering a primary that was not reviewed, so it is the last reviewer whose failures should send you there.
+6. Decide whether the `if: failure()` step stays. It costs one PR comment per failed round and nothing on a round that succeeds. Ship grades a failed round here `infra-error` from the run read either way, so dropping the step costs the link on the PR: the human then goes to the Actions tab to find the run themselves. A run asks for this reviewer when it needs the review, standalone or covering a primary that was not reviewed or was capped with findings, so it is the last reviewer whose failures should send you there.
 
 ### Profile blocks this produces
 

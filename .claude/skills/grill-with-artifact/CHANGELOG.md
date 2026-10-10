@@ -7,6 +7,15 @@ released version. See
 
 <!-- version list -->
 
+## v0.4.1 (2026-10-10)
+
+### Bug Fixes
+
+- **grill-with-artifact**: Move grilling to 49dd158
+  ([#538](https://github.com/Gharib89/skills/pull/538),
+  [`9c4e387`](https://github.com/Gharib89/skills/commit/9c4e387193ec725160c3c8792104d6e3f79dbd49))
+
+
 ## v0.4.0 (2026-10-06)
 
 ### Features
