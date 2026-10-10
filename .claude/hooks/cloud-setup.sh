@@ -28,10 +28,10 @@ set -uo pipefail
 # After the command runs the done test must pass.
 STEPS='prettier|[ "$(prettier --version 2>/dev/null)" = 3.9.9 ]|npm install -g prettier@3.9.9
 markdownlint-cli2|command -v markdownlint-cli2|npm install -g markdownlint-cli2@0.23.3
-shellcheck|command -v shellcheck|sudo apt-get -o DPkg::Lock::Timeout=120 install -y shellcheck
+shellcheck|command -v shellcheck|sudo apt-get -o DPkg::Lock::Timeout=120 update && sudo apt-get -o DPkg::Lock::Timeout=120 install -y shellcheck
 actionlint|command -v actionlint|GOBIN="$HOME/.local/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
 zizmor|command -v zizmor|uv tool install zizmor==1.30.1
-prek-install|command -v prek|uv tool install prek==0.5.3
+prek-install|command -v prek|uv tool install prek==0.5.4
 prek||prek install --prepare-hooks --allow-missing-config'
 # <<< setup-harness configuration
 : "${STEPS=}"
