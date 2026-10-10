@@ -44,6 +44,9 @@ FULL_RUN='prek run --all-files'
 # shellcheck disable=SC2016 # each row's own subshell expands $d
 TURN_ROWS='plugins/|mods|*.ts *.tsx plugin.json hooks.json tsconfig.json|for d in */; do claude plugin validate "$d" && continue; exit; done|for d in */; do claude plugin test "$d" && continue; exit; done|'
 # Extra checks on `full` only, one per line: <name>|<command>, from the root.
+# `full` runs marketplace beside the mods row. Safe on Claude Code 2.1.296:
+# `plugin test` and `plugin validate` write nothing under plugins/ (traced),
+# and only a session loading a mod generates its .claude-plugin/types/.
 FULL_ROWS='marketplace|claude plugin validate .'
 # FULL_ROWS names the cloud cannot run (the profile's Local-only: parts),
 # space-separated: `skipped` unrun when CLAUDE_CODE_REMOTE=true.
