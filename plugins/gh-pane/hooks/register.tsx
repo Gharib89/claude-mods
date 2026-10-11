@@ -249,7 +249,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'gh-pane',
-      description: "Open a pane of this repo's issues and PRs in run order",
+      description: "Open or hide a pane of this repo's issues and PRs in run order",
       // Typed mid-turn, the pane opens at once instead of waiting for the turn to end.
       immediate: true,
     })
@@ -257,7 +257,12 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // Run again while the pane is open, the command hides it, so one key binding shows and hides it as the band's button does.
   on('command.run', { command: 'gh-pane' }, async $ => {
+    if (await isOpen($)) {
+      await hide($)
+      return { text: 'gh-pane hidden.' }
+    }
     const opened = await show($, config)
     return { text: opened.isPlaced ? 'gh-pane opened.' : `gh-pane is waiting: ${opened.reason}` }
   })

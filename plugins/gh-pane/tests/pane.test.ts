@@ -114,7 +114,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   const ran: { command: string; args: string }[] = []
   const filled: string[] = []
   const clock = mock.clock(on, { now: NOW })
-  const panes = { isOpen: true, isBroken: false }
+  const panes = { isOpen: false, isBroken: false }
   const toasts: string[] = []
   const repo = { reads: 0, failsAt: 0 }
   on('process.run', async (_$, e, next) => {
@@ -694,6 +694,15 @@ test('the band above the prompt shows the pane and hides it', async ($, on) => {
     expect((await band.find({ key: 'toggle' }))?.props.label).toBe(`Open gh-pane ${LOGO}`)
     await band.unmount()
   }
+})
+
+test('/gh-pane opens the pane, and run again while it is open, hides it', async ($, on) => {
+  const { opened, closed } = host(on)
+  expect(await open($)).toEqual(expect.objectContaining({ text: 'gh-pane opened.' }))
+  expect(opened).toEqual(['gh-pane titled gh-pane'])
+  expect(await open($)).toEqual(expect.objectContaining({ text: 'gh-pane hidden.' }))
+  expect(closed).toEqual(['gh-pane'])
+  expect(opened).toHaveLength(1)
 })
 
 test('with the pane list unreadable, the band still draws its button', async ($, on) => {
