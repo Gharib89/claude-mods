@@ -114,7 +114,7 @@ Hook: local
 Pin: package pypi pytest-testmon
 Route: `uv tool install pytest --with pytest-testmon=={version}`; Blocked: None.
 Constraints: needs `coverage<8` and a first full run to build `.testmondata` before it can select. The route installs it into a pytest tool environment because `uv tool install` refuses a package with no executable of its own; that pytest is the newest release testmon admits.
-Traps: crashes with `KeyError: 'lf'` under `-p no:cacheprovider`. Where the stack's pytest `addopts` (`[tool.pytest.ini_options]`, `pytest.ini`, `setup.cfg` or `tox.ini`) carries `-m` or `-k`, testmon deselects nothing and every turn runs the whole suite: write the turn row's `<affected tests>` field as `pytest --testmon --testmon-forceselect`, behind any exec prefix (measured, pytest-testmon 2.2.0).
+Traps: crashes with `KeyError: 'lf'` under `-p no:cacheprovider`. Where the stack's pytest `addopts` (`[tool.pytest.ini_options]`, `pytest.ini`, `setup.cfg` or `tox.ini`) carries `-m` or `-k`, testmon deselects nothing and every turn runs the whole suite: write the turn row's `<affected tests>` field as `pytest --testmon --testmon-forceselect`, behind any exec prefix.
 
 ## language server
 
@@ -128,9 +128,9 @@ Settings: `{"python": {"pythonPath": "{root}/.venv/bin/python"}}`
 Hook: None.
 Pin: package npm pyright
 Route: None.
-Constraints: vendored from the Anthropic `pyright-lsp` plugin per [reference/language-servers.md](../reference/language-servers.md); needs Node, and with no `npx` on `PATH` the tool is `Unavailable: pyright needs Node`. The Python registries carry no trusted pyright, so the exact version rides in the vendored launch command instead of a dev dependency. Without `Settings:` pyright finds no in-project `.venv` (its `python` is off `PATH`), so every third-party import is `reportMissingImports`; `Settings:` names the stack root's `.venv`, which uv and pdm create and a uv workspace's members share. A venv elsewhere (`UV_PROJECT_ENVIRONMENT`, Poetry's default out-of-project venv) does not match, and a missing `.venv` leaves imports unresolved as before (measured, pyright 1.1.414, Claude Code 2.1.283). One interpreter per server: a second Python root is not served ([reference/language-servers.md](../reference/language-servers.md) `## Vendoring` step 2). Rejected: a root `pyrightconfig.json` naming the venv, which writes a repo-owned file and changes the repo's own `pyright` typecheck, and per-`executionEnvironments` `venvPath`/`venv`, which pyright refuses (`unrecognized setting "venvPath"`).
+Constraints: vendored from the Anthropic `pyright-lsp` plugin per [reference/language-servers.md](../reference/language-servers.md); needs Node, and with no `npx` on `PATH` the tool is `Unavailable: pyright needs Node`. The Python registries carry no trusted pyright, so the exact version rides in the vendored launch command instead of a dev dependency. Without `Settings:` pyright finds no in-project `.venv` (its `python` is off `PATH`), so every third-party import is `reportMissingImports`; `Settings:` names the stack root's `.venv`, which uv and pdm create and a uv workspace's members share. A venv elsewhere (`UV_PROJECT_ENVIRONMENT`, Poetry's default out-of-project venv) does not match, and a missing `.venv` leaves imports unresolved as before. Never write a `pyrightconfig.json` for this. One interpreter per server: a second Python root is not served ([reference/language-servers.md](../reference/language-servers.md) `## Vendoring` step 2).
 Local-only: cloud sessions start no plugin language server.
-Traps: the first launch of a version fetches pyright into the npx cache, which the first `LSP` call waits out (10 s cold, 3 s warm, measured).
+Traps: the first launch of a version fetches pyright into the npx cache, which the first `LSP` call waits out.
 
 ## public API
 

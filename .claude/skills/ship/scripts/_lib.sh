@@ -293,7 +293,7 @@ ship_title_grade() { # <title>
 
 # ship_require_grade <issue> <title>: exit 1 when the title grades below the
 # issue's recorded grade. `Grade: minor` and `Grade: breaking` both need a
-# `feat` or a `!` title (a 0.x skill's break is titled feat, ADR 0005);
+# `feat` or a `!` title (a 0.x skill's break is titled feat);
 # `Grade: patch` accepts any. Run before the push or host write the title feeds.
 ship_require_grade() { # <issue> <title>
   local want have type
@@ -462,8 +462,7 @@ ship_detect_host() {
 
 # ship_load_host [<owner>/<repo>]: detect and source the adapter, or exit 2 with
 # the contract. With a repo, the host is GitHub at that repo whatever the origin
-# names: the source repo, which a consumer on any host files a Ship defect to
-# (ADR 0004).
+# names: the source repo, which a consumer on any host files a Ship defect to.
 ship_load_host() {
   if [ -n "${1:-}" ]; then
     SHIP_HOST=github SHIP_OWNER=${1%%/*} SHIP_REPO=${1#*/} SHIP_REPO_SLUG=$1

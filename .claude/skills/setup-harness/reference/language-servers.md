@@ -1,6 +1,6 @@
 # Language servers
 
-A language server is wired only as a vendored, repo-owned plugin, so every machine runs the same server config at the same binary pin. The official marketplace cannot be pinned to a commit (a marketplace source takes a branch or tag, and it has no tags), so enabling its plugins would give each machine whatever `main` is. Each catalog `## language server` tool names the Anthropic plugin it is vendored from.
+A language server is wired only as a vendored, repo-owned plugin, so every machine runs the same server config at the same binary pin. Each catalog `## language server` tool names the Anthropic plugin it is vendored from.
 
 ## Vendoring
 
@@ -15,11 +15,7 @@ Per wired tool, from `anthropics/claude-plugins-official` at the head of `main`.
 3. **Disable the upstream in `.claude/settings.json`**: `"enabledPlugins": {"<upstream>@claude-plugins-official": false}`, merged beside the repo's own keys.
 4. **Pin the binary.** Where the entry's `Constraints:` pin the tool in the stack's own files (typescript-language-server and csharp-ls at the stack root, rust-analyzer with the channel in `rust-toolchain.toml`), the pin is the one Write step 1 wrote there. Otherwise the version rides in the `.lsp.json` launch, which fetches it, so Write step 1 installs nothing for the tool: pyright's `npx --yes --package=pyright@<v>`, gopls's `go run ...@<v>`, jdtls's launcher arguments `<version> <sha256>` (its build downloaded on first launch).
 
-The name and the disable are the coexistence rule, measured with a dev's user-scope `pyright-lsp@claude-plugins-official` enabled (Claude Code 2.1.283):
-
-- A vendored plugin keeping the upstream's name is not loaded: `the name "pyright-lsp" is already taken by an installed plugin (pyright-lsp@claude-plugins-official), which takes precedence`. It stays unloaded when the upstream is disabled, leaving no server for the extensions.
-- Under its own name with the upstream still enabled, both register for `.py`, but only the user-scope server starts and answers. The vendored one never runs, so the pin is silently unused. Nothing duplicates.
-- Under its own name with the upstream disabled, only the vendored server registers, starts and answers, and diagnostics arrive from one server.
+The new name and the disable are both required: the upstream's name or an enabled upstream leaves the vendored server unloaded or unused.
 
 An existing `.claude/skills/harness-<upstream>/` is the repo's own evidence: keep it and propose only what it lacks, per the Explore step.
 

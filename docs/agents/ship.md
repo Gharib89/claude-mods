@@ -16,7 +16,7 @@ Bootstrap: None.
 ## Local gate
 
 Location: scripts/local-gate.sh
-Small node: no test runner exists yet, so the only node is docs-class: the repo-relative path of the changed document, run through `scripts/check.sh edit <path>`, e.g. `docs/agents/ship.md`.
+Small node: a mod folder, run through `claude plugin test <folder>`, which takes no narrower node, e.g. `plugins/gh-pane`; docs-class: the repo-relative path of the changed document, run through `scripts/check.sh edit <path>`, e.g. `docs/agents/ship.md`.
 Tripwires: None.
 
 The gate runs `scripts/check.sh full` from the harness, plus `secrets` (gitleaks over `base..HEAD`). `deps` is a no-op until a stack with a lockfile lands.
@@ -49,13 +49,21 @@ docs/contributing/coding-standards.md
 
 ## Verification
 
-None.
+### Live run
+
+Proves: the changed mod's behaviour in a real Claude Code session, step 4 of the mod dev loop in CLAUDE.md
+Applies when: the change alters what a mod under `plugins/` does at run time (a hook, a pane, a band, a command, a message); not a change to tests, types or docs alone
+Run: `claude -p "<a prompt that exercises the change>" --plugin-dir plugins/<name> < /dev/null`; for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`), an interactive `claude --plugin-dir plugins/<name>`
+Needs: a signed-in Claude Code on PATH: `claude auth status` reports `"loggedIn": true`
+Without it: hand-off
+Also proven by CI: None.
+Claims to probe: each plugin API call or event the change relies on, read in the running build's types file, `plugins/<name>/.claude-plugin/types/claude-code/index.d.ts`
 
 ## Versioning and changelog
 
-Tooling: none
+Tooling: manual
 Reads: None.
-In-PR requirement: None.
+In-PR requirement: a PR that changes what a mod does bumps that mod's `version` in `plugins/<name>/.claude-plugin/plugin.json`.
 Subject constraints: None.
 
 Each mod carries its own `version` in its `plugin.json`; no release tooling reads it yet.
@@ -75,7 +83,7 @@ File as an issue labelled `needs-triage`.
 
 ## Docs sync
 
-Targets: README.md, docs/
+Targets: README.md, docs/, GLOSSARY.md
 Agent-facing: docs/agents/, .claude/skills/
 
 ## Current docs
