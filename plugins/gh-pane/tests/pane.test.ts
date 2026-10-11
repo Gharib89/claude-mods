@@ -602,7 +602,7 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
     return { value: { command: e.name } }
   })
   await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
-  // Registered immediate, so typed mid-turn it opens the pane at once.
+  // Registered immediate, so typed mid-turn it opens or hides the pane at once.
   expect(commands).toEqual([expect.objectContaining({ name: 'gh-pane', immediate: true })])
   await open($)
   const reads = () => calls.filter(argv => argv.at(-1) === 'repos/acme/widgets/issues?state=open&per_page=100').length

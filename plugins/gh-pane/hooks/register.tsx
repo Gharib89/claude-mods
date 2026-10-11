@@ -1,7 +1,7 @@
-// gh-pane: `/gh-pane`, or the band's button above the prompt, docks a pane of the session repo's open issues and PRs
-// in run order. Its buttons fill the prompt with the next command and never send it: the person reads it and presses
-// Enter. Two band buttons act on this session's own state instead: at its own merge gate one sends the merge reply,
-// and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
+// gh-pane: `/gh-pane`, or the band's button above the prompt, shows or hides a pane of the session repo's open issues
+// and PRs in run order. Its buttons fill the prompt with the next command and never send it: the person reads it and
+// presses Enter. Two band buttons act on this session's own state instead: at its own merge gate one sends the merge
+// reply, and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
@@ -250,7 +250,7 @@ export const register: Register = (on, options) => {
     await $.command.register({
       name: 'gh-pane',
       description: "Open or hide a pane of this repo's issues and PRs in run order",
-      // Typed mid-turn, the pane opens at once instead of waiting for the turn to end.
+      // Typed mid-turn, the pane opens or hides at once instead of waiting for the turn to end.
       immediate: true,
     })
     $.clock.every(120_000, () => refreshIfOpen($, config))
