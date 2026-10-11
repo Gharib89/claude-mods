@@ -258,8 +258,9 @@ export const register: Register = (on, options) => {
   })
 
   // Run again while the pane is open, the command hides it, so one key binding shows and hides it as the band's button does.
+  // An unreadable pane list reads as closed, as on the band, so the command still opens the pane.
   on('command.run', { command: 'gh-pane' }, async $ => {
-    if (await isOpen($)) {
+    if (await isOpen($).catch(() => false)) {
       await hide($)
       return { text: 'gh-pane hidden.' }
     }

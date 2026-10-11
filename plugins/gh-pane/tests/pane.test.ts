@@ -705,6 +705,13 @@ test('/gh-pane opens the pane, and run again while it is open, hides it', async 
   expect(opened).toHaveLength(1)
 })
 
+test('with the pane list unreadable, /gh-pane still opens the pane', async ($, on) => {
+  const { panes, opened } = host(on)
+  panes.isBroken = true
+  expect(await open($)).toEqual(expect.objectContaining({ text: 'gh-pane opened.' }))
+  expect(opened).toEqual(['gh-pane titled gh-pane'])
+})
+
 test('with the pane list unreadable, the band still draws its button', async ($, on) => {
   const { panes } = host(on)
   panes.isBroken = true
