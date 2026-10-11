@@ -351,9 +351,9 @@ export const register: Register = (on, options) => {
     const ciMark = { pass: ['✓', 'green'], fail: ['✗', 'red'], running: ['●', 'yellow'] } as const
 
     if (!expansion.has(view.repo)) expansion.set(view.repo, { all: false, flipped: new Set() })
-    const ex = expansion.get(view.repo)!
+    const expanded = expansion.get(view.repo)!
     const toggle = (n: number) => {
-      if (!ex.flipped.delete(n)) ex.flipped.add(n)
+      if (!expanded.flipped.delete(n)) expanded.flipped.add(n)
       $.ui.invalidate('ui.render')
     }
 
@@ -361,7 +361,7 @@ export const register: Register = (on, options) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
       const ci = state.pr === undefined ? undefined : view.ci[state.pr]
-      const isOpen = ex.all !== ex.flipped.has(issue.number)
+      const isOpen = expanded.all !== expanded.flipped.has(issue.number)
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•]/, ' ')}  ↳`
@@ -372,15 +372,21 @@ export const register: Register = (on, options) => {
         `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
         ...(issue.milestone ? [issue.milestone] : []),
       ]
+      // The row's buttons, each named by its label: what it fills in the prompt.
+      const buttons = [
+        state.isReady && { name: 'ship', fills: () => fill(config.shipCommand, { n: issue.number }) },
+        state.isNext && { name: 'next', fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
+        state.isDone && { name: 'close', fills: () => fill(config.closeRequest, { n: issue.number, total: issue.subs.total }) },
+        has(issue, config.needsTriage) && { name: 'triage', fills: () => triage([issue.number]) },
+      ].flatMap(button => button || [])
       // What follows a collapsed title, measured, each part with its one-column gap: the dots, the count, the tag, the
       // CI mark and the buttons.
-      const buttons = [state.isReady && 'ship', state.isNext && 'next', state.isDone && 'close', has(issue, config.needsTriage) && 'triage']
       const tail = [
         labels.length,
         issue.subs.total > 0 ? `${issue.subs.done}/${issue.subs.total}`.length : 0,
         `${state.tag}${state.pr === undefined ? '' : `#${state.pr}`}${(state.blockers ?? []).map(b => b.label).join(', ')}`.length,
         ci ? 1 : 0,
-        ...buttons.map(button => (button ? button.length : 0)),
+        ...buttons.map(button => button.name.length),
       ].reduce((sum, width) => sum + (width > 0 ? width + 1 : 0), 0)
       // The prefix, the toggle and `#N `, each with its gap, and one spare column.
       const titleRoom = Math.max(8, room - prefix.length - 3 - `#${issue.number} `.length - tail - 1)
@@ -408,28 +414,9 @@ export const register: Register = (on, options) => {
             {state.blockers ? blockers(state.blockers) : ''}
           </Text>
           {ci && <Text color={ciMark[ci][1]}>{ciMark[ci][0]}</Text>}
-          {state.isReady && (
-            <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
-          )}
-          {state.isNext && (
-            <Button
-              key={`next-${issue.number}`}
-              plain
-              label="next"
-              onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
-            />
-          )}
-          {state.isDone && (
-            <Button
-              key={`close-${issue.number}`}
-              plain
-              label="close"
-              onPress={() => propose($, fill(config.closeRequest, { n: issue.number, total: issue.subs.total }))}
-            />
-          )}
-          {has(issue, config.needsTriage) && (
-            <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
-          )}
+          {buttons.map(({ name, fills }) => (
+            <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
+          ))}
         </Box>,
         // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
         isOpen && (
@@ -461,13 +448,17 @@ export const register: Register = (on, options) => {
           </Box>
         ),
         isOpen && labels.length > 0 && (
-          <Box key={`chips-${issue.number}`} gap={1} flexWrap="wrap">
-            <Text dimColor>{indent}</Text>
-            {labels.map(label => (
-              <Text key={`chip-${issue.number}-${label}`} backgroundColor={colorOf(issue, label)} color={inkOn(colorOf(issue, label))}>
-                {` ${label} `}
-              </Text>
-            ))}
+          <Box key={`chips-${issue.number}`} gap={1}>
+            <Box flexShrink={0}>
+              <Text dimColor>{indent}</Text>
+            </Box>
+            <Box flexShrink={1} gap={1} flexWrap="wrap">
+              {labels.map(label => (
+                <Text key={`chip-${issue.number}-${label}`} backgroundColor={colorOf(issue, label)} color={inkOn(colorOf(issue, label))}>
+                  {` ${label} `}
+                </Text>
+              ))}
+            </Box>
           </Box>
         ),
         isOpen && (
@@ -500,10 +491,10 @@ export const register: Register = (on, options) => {
             key="expand"
             plain
             hotkey="e"
-            label={ex.all ? 'collapse all' : 'expand all'}
+            label={expanded.all ? 'collapse all' : 'expand all'}
             onPress={() => {
-              ex.all = !ex.all
-              ex.flipped.clear()
+              expanded.all = !expanded.all
+              expanded.flipped.clear()
               $.ui.invalidate('ui.render')
             }}
           />
