@@ -386,6 +386,19 @@ export const register: Register = (on, options) => {
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•▾]/, ' ')}  ↳`
+      // What follows the title on a collapsed row, measured, each part with its one-column gap.
+      const tagText = `${state.tag}${state.pr !== undefined ? `#${state.pr}` : ''}${(state.blockers ?? []).map(b => b.label).join(', ')}`
+      const buttons = [state.isReady && 'ship', state.isNext && 'next', state.isDone && 'close', has(issue, config.needsTriage) && 'triage']
+        .filter(b => typeof b === 'string')
+      const tail = [
+        look.dots && labels.length > 0 ? labels.length : 0,
+        issue.subs.total > 0 ? `${issue.subs.done}/${issue.subs.total}`.length : 0,
+        tagText.length,
+        ci ? 1 : 0,
+        ...buttons.map(b => b.length),
+      ].reduce((sum, w) => sum + (w > 0 ? w + 1 : 0), 0)
+      // prefix, gap, toggle, gap, `#N `, and one spare column.
+      const titleRoom = Math.max(8, room - prefix.length - 4 - `#${issue.number} `.length - tail - 1)
       return [
         <Box key={`row-${issue.number}`} gap={1}>
           <Text dimColor>{prefix}</Text>
@@ -394,7 +407,7 @@ export const register: Register = (on, options) => {
             <Text bold={state.isReady === true}>{ref(issue.number)}</Text>
           ) : (
             <Text bold={state.isReady === true}>
-              {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 38 - (look.dots ? labels.length : 0)))}
+              {ref(issue.number)} {cut(issue.title, titleRoom)}
             </Text>
           )}
           {!open && look.dots && labels.length > 0 && (
@@ -404,7 +417,7 @@ export const register: Register = (on, options) => {
               ))}
             </Text>
           )}
-          {issue.subs.total > 0 && <Text dimColor>{`${bar} ${issue.subs.done}/${issue.subs.total}`}</Text>}
+          {issue.subs.total > 0 && <Text dimColor>{open ? `${bar} ${issue.subs.done}/${issue.subs.total}` : `${issue.subs.done}/${issue.subs.total}`}</Text>}
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
