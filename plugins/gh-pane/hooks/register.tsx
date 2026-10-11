@@ -8,6 +8,7 @@ import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
+import { fixture, PROTOTYPE_FIXTURE } from './prototype-fixture'
 import { commandOf, fill, gatePr, mergedPrOf, runLine } from './rules'
 
 const PANE = 'gh-pane'
@@ -36,6 +37,33 @@ const configOf = (o: PluginOptions) => ({
   buttonIcon: String(o.buttonIcon),
 })
 
+// Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable, as `kept` is, so
+// it survives the /clear the next button runs.
+const expansion = new Map<string, { all: boolean; flipped: Set<number> }>()
+const expansionOf = (repo: string) => {
+  if (!expansion.has(repo)) expansion.set(repo, { all: false, flipped: new Set() })
+  return expansion.get(repo)!
+}
+// PROTOTYPE: the header's flip cycles chip style (chip, name) by collapsed labels (dots, none).
+const FLIPS = [
+  { chip: 'chip', dots: true },
+  { chip: 'name', dots: true },
+  { chip: 'chip', dots: false },
+  { chip: 'name', dots: false },
+] as const
+let flip = 0
+
+// Black or white text on a label's hex background, by perceived brightness.
+const inkOn = (hex: string) => {
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16))
+  return (0.299 * r! + 0.587 * g! + 0.114 * b!) / 255 > 0.6 ? '#000000' : '#ffffff'
+}
+
+const age = (now: string, then: string) => {
+  const hours = (Date.parse(now) - Date.parse(then)) / 3_600_000
+  return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
+}
+
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
@@ -62,7 +90,7 @@ async function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
   const cwd = await $.session.cwd()
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
-  const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
+  const next = PROTOTYPE_FIXTURE ? fixture(now) : await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
   if (ticket !== reads) return next
   kept = { cwd, view: next }
   await update($, snapshot, () => next)
@@ -331,23 +359,62 @@ export const register: Register = (on, options) => {
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
+    const ex = expansionOf(view.repo)
+    const look = FLIPS[flip]!
+    const isExpanded = (n: number) => ex.all !== ex.flipped.has(n)
+    const toggle = (n: number) => {
+      if (!ex.flipped.delete(n)) ex.flipped.add(n)
+      $.ui.invalidate('ui.render')
+    }
+    const stateLabels = [config.needsTriage, config.needsInfo, config.readyForAgent, config.readyForHuman, config.mapLabel]
+    const shown = (issue: Issue) => issue.labels.filter(l => !stateLabels.includes(l))
+    const chip = (issue: Issue, name: string) => {
+      const hex = issue.labelColors[name] ?? 'cccccc'
+      return look.chip === 'chip' ? (
+        <Text key={`chip-${issue.number}-${name}`} backgroundColor={`#${hex}`} color={inkOn(hex)}>{` ${name} `}</Text>
+      ) : (
+        <Text key={`chip-${issue.number}-${name}`} color={`#${hex}`}>{name}</Text>
+      )
+    }
+    const ciMark = { pass: ['✓', 'green'], fail: ['✗', 'red'], running: ['●', 'yellow'] } as const
+
     const row = (issue: Issue, prefix: string) => {
       const state = stateOf(issue, config, isMapTicket(issue))
+      const open = isExpanded(issue.number)
+      const labels = shown(issue)
+      const ci = state.pr === undefined ? undefined : view.ci[state.pr]
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•▾]/, ' ')}  ↳`
       return [
         <Box key={`row-${issue.number}`} gap={1}>
           <Text dimColor>{prefix}</Text>
-          <Text bold={state.isReady === true}>
-            {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 36))}
-          </Text>
+          <Button key={`toggle-${issue.number}`} plain label={open ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
+          {open ? (
+            <Box flexShrink={1}>
+              <Text bold={state.isReady === true} wrap="wrap">
+                {ref(issue.number)} {issue.title}
+              </Text>
+            </Box>
+          ) : (
+            <Text bold={state.isReady === true}>
+              {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 38 - (look.dots ? labels.length : 0)))}
+            </Text>
+          )}
+          {!open && look.dots && labels.length > 0 && (
+            <Text>
+              {labels.map(l => (
+                <Text key={`dot-${issue.number}-${l}`} color={`#${issue.labelColors[l] ?? 'cccccc'}`}>●</Text>
+              ))}
+            </Text>
+          )}
           {issue.subs.total > 0 && <Text dimColor>{`${bar} ${issue.subs.done}/${issue.subs.total}`}</Text>}
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
             {state.blockers ? blockers(state.blockers) : ''}
           </Text>
+          {ci && <Text color={ciMark[ci][1]}>{ciMark[ci][0]}</Text>}
           {state.isReady && (
             <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
           )}
@@ -387,6 +454,25 @@ export const register: Register = (on, options) => {
             )}
           </Box>
         ),
+        open && labels.length > 0 && (
+          <Box key={`chips-${issue.number}`} gap={1} flexWrap="wrap">
+            <Text dimColor>{`${pad.replace('↳', ' ')}`}</Text>
+            {labels.map(l => chip(issue, l))}
+          </Box>
+        ),
+        open && (
+          <Box key={`facts-${issue.number}`} gap={1}>
+            <Text dimColor>{`${pad.replace('↳', ' ')}`}</Text>
+            <Text dimColor>
+              {[
+                ...(issue.assignees.length > 0 && !state.tag.startsWith('claimed') ? [issue.assignees.join(', ')] : []),
+                `updated ${age(view.fetchedAt, issue.updatedAt)}`,
+                `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
+                ...(issue.milestone ? [issue.milestone] : []),
+              ].join(' · ')}
+            </Text>
+          </Box>
+        ),
       ]
     }
 
@@ -407,13 +493,33 @@ export const register: Register = (on, options) => {
             {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
           </Text>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
+          <Button
+            key="expand"
+            plain
+            hotkey="e"
+            label={ex.all ? 'collapse all' : 'expand all'}
+            onPress={() => {
+              ex.all = !ex.all
+              ex.flipped.clear()
+              $.ui.invalidate('ui.render')
+            }}
+          />
+          <Button
+            key="flip"
+            plain
+            label={`[prototype] ${look.chip === 'chip' ? 'chips' : 'names'} + ${look.dots ? 'dots' : 'no dots'} ⇄`}
+            onPress={() => {
+              flip = (flip + 1) % FLIPS.length
+              $.ui.invalidate('ui.render')
+            }}
+          />
         </Box>
         {roots.map(root =>
           root.subs.total === 0 ? (
             row(root, '•')
           ) : (
             <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
-              {row(root, '▾')}
+              {row(root, '•')}
               {branch(root, '  ')}
             </Box>
           ),

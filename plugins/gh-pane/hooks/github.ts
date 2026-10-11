@@ -38,6 +38,10 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
     title: raw.title,
     url: raw.html_url,
     labels: raw.labels.map((l: Raw) => l.name),
+    labelColors: Object.fromEntries(raw.labels.map((l: Raw) => [l.name, l.color])),
+    updatedAt: raw.updated_at,
+    comments: raw.comments,
+    milestone: raw.milestone?.title,
     assignees: raw.assignees.map((a: Raw) => a.login),
     children: [],
     subs: { total: raw.sub_issues_summary?.total ?? 0, done: raw.sub_issues_summary?.completed ?? 0 },
@@ -71,7 +75,17 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
         })),
     ]).filter(task => task !== false),
   )
-  return { repo, issues, prs: prs.length, fetchedAt: now }
+  const ci: Record<number, 'pass' | 'fail' | 'running'> = {}
+  await inTurn(
+    [...new Set(closer.values())].map(n => async () => {
+      const runs = (await list(run, `repos/${repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`)).flatMap(page => page.check_runs ?? [])
+      if (runs.length === 0) return
+      ci[n] = runs.some(r => r.status !== 'completed')
+        ? 'running'
+        : runs.every(r => ['success', 'skipped', 'neutral'].includes(r.conclusion)) ? 'pass' : 'fail'
+    }),
+  )
+  return { repo, issues, prs: prs.length, fetchedAt: now, ci }
 }
 
 /** Whether PR `n` of the session repo is merged. */

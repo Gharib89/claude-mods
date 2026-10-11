@@ -6,6 +6,12 @@ export type Issue = {
   title: string
   url: string
   labels: string[]
+  /** PROTOTYPE: each label's hex colour, no `#`. */
+  labelColors: Record<string, string>
+  /** PROTOTYPE: facts line. */
+  updatedAt: string
+  comments: number
+  milestone?: string
   assignees: string[]
   /** Its open sub-issues in this repo, in the parent's order. */
   children: number[]
@@ -24,7 +30,7 @@ export type Issue = {
 }
 
 export type Snapshot =
-  | { repo: string; issues: Issue[]; prs: number; fetchedAt: string }
+  | { repo: string; issues: Issue[]; prs: number; fetchedAt: string; ci: Record<number, 'pass' | 'fail' | 'running'> }
   | { error: string }
 
 /** Where this session stands at a ship run's merge gate, or once a ship run merged on its own: the PR and the band's offer. */
