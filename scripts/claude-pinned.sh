@@ -6,4 +6,7 @@
 #   scripts/claude-pinned.sh <claude args>...
 set -euo pipefail
 pin=$(cat "$(git rev-parse --show-toplevel)/.claude-code-version")
+# A build npx cannot fetch exits 127, which check.sh reads as unavailable, not
+# as the mod failing (npx itself exits 1 for it).
+npx -y "@anthropic-ai/claude-code@$pin" --version > /dev/null 2>&1 || exit 127
 exec npx -y "@anthropic-ai/claude-code@$pin" "$@"
