@@ -372,13 +372,25 @@ export const register: Register = (on, options) => {
         `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
         ...(issue.milestone ? [issue.milestone] : []),
       ]
+      // What follows a collapsed title, measured, each part with its one-column gap: the dots, the count, the tag, the
+      // CI mark and the buttons.
+      const buttons = [state.isReady && 'ship', state.isNext && 'next', state.isDone && 'close', has(issue, config.needsTriage) && 'triage']
+      const tail = [
+        labels.length,
+        issue.subs.total > 0 ? `${issue.subs.done}/${issue.subs.total}`.length : 0,
+        `${state.tag}${state.pr === undefined ? '' : `#${state.pr}`}${(state.blockers ?? []).map(b => b.label).join(', ')}`.length,
+        ci ? 1 : 0,
+        ...buttons.map(button => (button ? button.length : 0)),
+      ].reduce((sum, width) => sum + (width > 0 ? width + 1 : 0), 0)
+      // The prefix, the toggle and `#N `, each with its gap, and one spare column.
+      const titleRoom = Math.max(8, room - prefix.length - 3 - `#${issue.number} `.length - tail - 1)
       return [
         <Box key={`row-${issue.number}`} gap={1}>
           <Text dimColor>{prefix}</Text>
           <Button key={`toggle-${issue.number}`} plain label={isOpen ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
           <Text bold={state.isReady === true}>
             {ref(issue.number)}
-            {isOpen ? '' : ` ${cut(issue.title, Math.max(8, room - prefix.length - 36))}`}
+            {isOpen ? '' : ` ${cut(issue.title, titleRoom)}`}
           </Text>
           {!isOpen && labels.length > 0 && (
             <Text>

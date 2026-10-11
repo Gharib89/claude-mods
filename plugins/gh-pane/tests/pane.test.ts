@@ -194,7 +194,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   return { calls, filled, clock, panes, repo, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
 }
 
-type Mounted = Awaited<ReturnType<Engine['ui']['mount']>>
+type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find'>
 type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const textOf = (node: unknown): string =>
   typeof node === 'string' ? node : (node as Drawn).type === 'Link' ? String((node as Drawn).props.label) : ((node as Drawn).children ?? []).map(textOf).join('')
@@ -481,6 +481,25 @@ test('expanded rows survive a /clear that empties the session state', async ($, 
   const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await after.find({ key: 'toggle-24' }))?.props.label).toBe('▾')
   expect(await after.find({ key: 'title-24' })).toBeDefined()
+})
+
+test('at 55 columns a collapsed title takes what its measured tail leaves', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(7, ['ready-for-human'], { title: LONG }),
+      issue(8, ['ready-for-agent'], { title: LONG }),
+      issue(9, ['ready-for-human', 'bug', 'XL'], { title: LONG }),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 55 }, surface: 'terminal' })
+  const title = async (n: number) => (await spans(ui, `row-${n}`))[1]![0].slice(`#${n} `.length)
+  const yours = await title(7)
+  expect(yours.endsWith('…')).toBe(true)
+  expect(yours.length).toBeGreaterThanOrEqual(35)
+  // `ready now` is 4 columns wider than `yours`, and the ship button takes 5; two dots take 3.
+  expect((await title(8)).length).toBe(yours.length - 9)
+  expect((await title(9)).length).toBe(yours.length - 3)
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
