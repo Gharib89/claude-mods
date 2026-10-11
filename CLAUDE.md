@@ -17,7 +17,7 @@ A mod change is done when all four steps are **green** for `plugins/<name>`:
 3. `claude plugin test plugins/<name>`: the test answers every engine event the mod awaits (`session.usage`, `turn.complete`, `ui.toast`) itself.
 4. A live run shows the behaviour: `claude -p "<prompt>" --plugin-dir plugins/<name> < /dev/null`, or an interactive `claude --plugin-dir plugins/<name>` for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`). For a change to the marketplace entry, install from the checkout at local scope: `claude plugin marketplace add <checkout> --scope local` then `claude plugin install <name>@claude-mods --scope local`; the `Gharib89/claude-mods` form reads `main`.
 
-CI (`.github/workflows/mods.yml`) runs steps 1 to 3 on the pinned build. `check.sh turn` and `full` run steps 1 and 3; `tsc` stays CI-only, since its types need a model turn.
+CI (`.github/workflows/mods.yml`) runs steps 1 to 3 on the build `.claude-code-version` pins. `check.sh turn` and `full` run steps 1 and 3 on that same build, through `scripts/claude-pinned.sh`; `tsc` stays CI-only, since its types need a model turn.
 
 ## Plugin API authority
 

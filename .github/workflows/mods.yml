@@ -20,11 +20,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # The plugin API is early access and shifts between builds: bump this pin
-      # only together with a re-run of the whole loop. Exact versions with no
-      # lockfile, since the repo has no JS stack of its own yet.
-      - name: Install Claude Code 2.1.288 and TypeScript
-        run: npm install -g @anthropic-ai/claude-code@2.1.288 typescript@7.0.2 # zizmor: ignore[adhoc-packages]
+      # The plugin API is early access and shifts between builds: bump the pin in
+      # .claude-code-version only together with a re-run of the whole loop. The
+      # local checks read the same file (scripts/claude-pinned.sh). Exact
+      # versions with no lockfile, since the repo has no JS stack of its own yet.
+      - name: Install the pinned Claude Code and TypeScript
+        run: npm install -g "@anthropic-ai/claude-code@$(cat .claude-code-version)" typescript@7.0.2 # zizmor: ignore[adhoc-packages]
 
       - name: Validate the marketplace and the mods
         run: |

@@ -67,7 +67,7 @@ if [ "$lane" = small ]; then
   # folder, never a file, on 2.1.296); any other node is a changed document,
   # which check.sh edit lints.
   if [ -f "$small/.claude-plugin/plugin.json" ]; then
-    if command -v claude >/dev/null; then run tests claude plugin test "$small"
+    if command -v npx >/dev/null; then run tests scripts/claude-pinned.sh plugin test "$small"
     else mark tests unavailable; fi
   else run tests scripts/check.sh edit "$small"; fi
 else

@@ -16,7 +16,7 @@ Bootstrap: None.
 ## Local gate
 
 Location: scripts/local-gate.sh
-Small node: a mod folder, run through `claude plugin test <folder>`, which takes no narrower node, e.g. `plugins/gh-pane`; docs-class: the repo-relative path of the changed document, run through `scripts/check.sh edit <path>`, e.g. `docs/agents/ship.md`.
+Small node: a mod folder, run through `scripts/claude-pinned.sh plugin test <folder>`, which takes no narrower node, e.g. `plugins/gh-pane`; docs-class: the repo-relative path of the changed document, run through `scripts/check.sh edit <path>`, e.g. `docs/agents/ship.md`.
 Tripwires: None.
 
 The gate runs `scripts/check.sh full` from the harness, plus `secrets` (gitleaks over `base..HEAD`). `deps` is a no-op until a stack with a lockfile lands.
