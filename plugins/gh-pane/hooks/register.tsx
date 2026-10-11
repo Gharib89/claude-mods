@@ -488,10 +488,10 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={room}>
+        <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
+          {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
+        </Text>
         <Box gap={1}>
-          <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
-            {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
-          </Text>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
           <Button
             key="expand"
