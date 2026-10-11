@@ -47,6 +47,20 @@ let reads = 0
 // that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
 // and draws only in the folder it was read in: one process may host more than one session.
 let kept: { cwd: string; view: Snapshot } | null = null
+// Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
+// is one: it outlives the /clear the next button runs.
+const expansion = new Map<string, { all: boolean; flipped: Set<number> }>()
+
+// Black or white ink on a label's hex colour, by perceived brightness.
+const inkOn = (hex: string) => {
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i + 1, i + 3), 16))
+  return (0.299 * r! + 0.587 * g! + 0.114 * b!) / 255 > 0.6 ? '#000000' : '#ffffff'
+}
+
+const age = (now: string, then: string) => {
+  const hours = (Date.parse(now) - Date.parse(then)) / 3_600_000
+  return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
+}
 
 const runnerOf = ($: EngineInterface): Runner => async argv => {
   const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
@@ -294,7 +308,9 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
-    const view = (await read($, snapshot)) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
+    // A snapshot an older version wrote (no `ci`) may still be in `$.state` once the mod reloads, and draws as none.
+    const stored = await read($, snapshot)
+    const view = (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     // A failed read (a network blip) holds the pane until the next re-read, so retry starts one now.
@@ -331,46 +347,92 @@ export const register: Register = (on, options) => {
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
+    // The labels a row shows: all but the state labels its tag already says.
+    const stateLabels = [config.needsTriage, config.needsInfo, config.readyForAgent, config.readyForHuman, config.mapLabel]
+    const colorOf = (issue: Issue, label: string) => `#${issue.labelColors[label] || 'ededed'}`
+    const ciMark = { pass: ['✓', 'green'], fail: ['✗', 'red'], running: ['●', 'yellow'] } as const
+
+    if (!expansion.has(view.repo)) expansion.set(view.repo, { all: false, flipped: new Set() })
+    const expanded = expansion.get(view.repo)!
+    const toggle = (n: number) => {
+      if (!expanded.flipped.delete(n)) expanded.flipped.add(n)
+      $.ui.invalidate('ui.render')
+    }
+
     const row = (issue: Issue, prefix: string) => {
       const state = stateOf(issue, config, isMapTicket(issue))
+      const labels = issue.labels.filter(label => !stateLabels.includes(label))
+      const ci = state.pr === undefined ? undefined : view.ci[state.pr]
+      const isExpanded = expanded.all !== expanded.flipped.has(issue.number)
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
-      const pad = `${prefix.replace('├', '│').replace(/[└•▾]/, ' ')}  ↳`
+      const pad = `${prefix.replace('├', '│').replace(/[└•]/, ' ')}  ↳`
+      const indent = pad.replace('↳', ' ')
+      const facts = [
+        ...(issue.assignees.length > 0 && !state.tag.startsWith('claimed') ? [issue.assignees.join(', ')] : []),
+        `updated ${age(view.fetchedAt, issue.updatedAt)}`,
+        `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
+        ...(issue.milestone ? [issue.milestone] : []),
+      ]
+      // The row's buttons, each named by its label: what it fills in the prompt.
+      const buttons = [
+        state.isReady && { name: 'ship', fills: () => fill(config.shipCommand, { n: issue.number }) },
+        state.isNext && { name: 'next', fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
+        state.isDone && { name: 'close', fills: () => fill(config.closeRequest, { n: issue.number, total: issue.subs.total }) },
+        has(issue, config.needsTriage) && { name: 'triage', fills: () => triage([issue.number]) },
+      ].flatMap(button => button || [])
+      // What follows a collapsed title, measured, each part with its one-column gap: the dots, the count, the tag, the
+      // CI mark and the buttons.
+      const tail = [
+        labels.length,
+        issue.subs.total > 0 ? `${issue.subs.done}/${issue.subs.total}`.length : 0,
+        `${state.tag}${state.pr === undefined ? '' : `#${state.pr}`}${(state.blockers ?? []).map(b => b.label).join(', ')}`.length,
+        ci ? 1 : 0,
+        ...buttons.map(button => button.name.length),
+      ].reduce((sum, width) => sum + (width > 0 ? width + 1 : 0), 0)
+      // The prefix, the toggle and `#N `, each with its gap, and one spare column.
+      const titleRoom = Math.max(8, room - prefix.length - 3 - `#${issue.number} `.length - tail - 1)
       return [
         <Box key={`row-${issue.number}`} gap={1}>
           <Text dimColor>{prefix}</Text>
+          <Button key={`toggle-${issue.number}`} plain label={isExpanded ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
           <Text bold={state.isReady === true}>
-            {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 36))}
+            {ref(issue.number)}
+            {isExpanded ? '' : ` ${cut(issue.title, titleRoom)}`}
           </Text>
-          {issue.subs.total > 0 && <Text dimColor>{`${bar} ${issue.subs.done}/${issue.subs.total}`}</Text>}
+          {!isExpanded && labels.length > 0 && (
+            <Text>
+              {labels.map(label => (
+                <Text key={`dot-${issue.number}-${label}`} color={colorOf(issue, label)}>
+                  ●
+                </Text>
+              ))}
+            </Text>
+          )}
+          {issue.subs.total > 0 && <Text dimColor>{`${isExpanded ? `${bar} ` : ''}${issue.subs.done}/${issue.subs.total}`}</Text>}
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
             {state.blockers ? blockers(state.blockers) : ''}
           </Text>
-          {state.isReady && (
-            <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
-          )}
-          {state.isNext && (
-            <Button
-              key={`next-${issue.number}`}
-              plain
-              label="next"
-              onPress={() => propose($, fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }))}
-            />
-          )}
-          {state.isDone && (
-            <Button
-              key={`close-${issue.number}`}
-              plain
-              label="close"
-              onPress={() => propose($, fill(config.closeRequest, { n: issue.number, total: issue.subs.total }))}
-            />
-          )}
-          {has(issue, config.needsTriage) && (
-            <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
-          )}
+          {ci && <Text color={ciMark[ci][1]}>{ciMark[ci][0]}</Text>}
+          {buttons.map(({ name, fills }) => (
+            <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
+          ))}
         </Box>,
+        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
+        isExpanded && (
+          <Box key={`title-${issue.number}`} gap={1}>
+            <Box flexShrink={0}>
+              <Text dimColor>{indent}</Text>
+            </Box>
+            <Box flexShrink={1}>
+              <Text bold={state.isReady === true} wrap="wrap">
+                {issue.title}
+              </Text>
+            </Box>
+          </Box>
+        ),
         run && (
           <Box key={`run-${issue.number}`} gap={1}>
             <Text dimColor>{pad}</Text>
@@ -385,6 +447,26 @@ export const register: Register = (on, options) => {
                 onPress={() => propose($, fill(config.releaseRequest, { n: issue.number, user: issue.assignees.join(', ') }))}
               />
             )}
+          </Box>
+        ),
+        isExpanded && labels.length > 0 && (
+          <Box key={`chips-${issue.number}`} gap={1}>
+            <Box flexShrink={0}>
+              <Text dimColor>{indent}</Text>
+            </Box>
+            <Box flexShrink={1} gap={1} flexWrap="wrap">
+              {labels.map(label => (
+                <Text key={`chip-${issue.number}-${label}`} backgroundColor={colorOf(issue, label)} color={inkOn(colorOf(issue, label))}>
+                  {` ${label} `}
+                </Text>
+              ))}
+            </Box>
+          </Box>
+        ),
+        isExpanded && (
+          <Box key={`facts-${issue.number}`} gap={1}>
+            <Text dimColor>{indent}</Text>
+            <Text dimColor>{facts.join(' · ')}</Text>
           </Box>
         ),
       ]
@@ -402,18 +484,29 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={room}>
+        <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
+          {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
+        </Text>
         <Box gap={1}>
-          <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
-            {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
-          </Text>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
+          <Button
+            key="expand"
+            plain
+            hotkey="e"
+            label={expanded.all ? 'collapse all' : 'expand all'}
+            onPress={() => {
+              expanded.all = !expanded.all
+              expanded.flipped.clear()
+              $.ui.invalidate('ui.render')
+            }}
+          />
         </Box>
         {roots.map(root =>
           root.subs.total === 0 ? (
             row(root, '•')
           ) : (
             <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
-              {row(root, '▾')}
+              {row(root, '•')}
               {branch(root, '  ')}
             </Box>
           ),

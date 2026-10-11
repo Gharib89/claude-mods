@@ -1,7 +1,7 @@
 // Reads the session repo's open issues and PRs over GitHub REST (`gh api`), never GraphQL, which flakes 401
 // mid-session (docs/adr/0001-mods-may-read-the-session-repo.md).
 
-import type { Issue, Snapshot } from '../types'
+import type { CiState, Issue, Snapshot } from '../types'
 import { closesOf, worktreeIssue } from './rules'
 
 /** Runs argv on the host and answers its stdout, throwing on a nonzero exit; register.tsx owns `$`. */
@@ -9,9 +9,9 @@ export type Runner = (argv: string[]) => Promise<string>
 
 type Raw = Record<string, any>
 
-// Every path read here answers a list; --slurp wraps each page in an outer array.
+// Every path read here answers a list, or for check runs one object per page; --slurp wraps each page in an outer array.
 const list = async (run: Runner, path: string): Promise<Raw[]> =>
-  (JSON.parse(await run(['gh', 'api', '--paginate', '--slurp', path])) as Raw[][]).flat()
+  (JSON.parse(await run(['gh', 'api', '--paginate', '--slurp', path])) as (Raw | Raw[])[]).flat()
 
 /** Runs `tasks` at most 8 at a time: GitHub's secondary rate limit refuses many concurrent requests. */
 async function inTurn(tasks: (() => Promise<void>)[]) {
@@ -38,6 +38,10 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
     title: raw.title,
     url: raw.html_url,
     labels: raw.labels.map((l: Raw) => l.name),
+    labelColors: Object.fromEntries(raw.labels.map((l: Raw) => [l.name, l.color])),
+    updatedAt: raw.updated_at,
+    comments: raw.comments,
+    milestone: raw.milestone?.title,
     assignees: raw.assignees.map((a: Raw) => a.login),
     children: [],
     subs: { total: raw.sub_issues_summary?.total ?? 0, done: raw.sub_issues_summary?.completed ?? 0 },
@@ -71,7 +75,20 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
         })),
     ]).filter(task => task !== false),
   )
-  return { repo, issues, prs: prs.length, fetchedAt: now }
+  // Check runs only: legacy commit statuses answer `pending` when a repo posts none, which would mark every PR running.
+  const ci: Record<number, CiState> = {}
+  await inTurn(
+    [...new Set(issues.flatMap(issue => issue.pr ?? []))].map(n => async () => {
+      const runs = (await list(run, `repos/${repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`)).flatMap(page => page.check_runs)
+      if (runs.length === 0) return
+      ci[n] = runs.some(r => r.status !== 'completed')
+        ? 'running'
+        : runs.every(r => ['success', 'skipped', 'neutral'].includes(r.conclusion))
+          ? 'pass'
+          : 'fail'
+    }),
+  )
+  return { repo, issues, prs: prs.length, fetchedAt: now, ci }
 }
 
 /** Whether PR `n` of the session repo is merged. */
