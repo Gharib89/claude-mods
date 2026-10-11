@@ -223,7 +223,9 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     const ui = await $.ui.mount({ ...PANE, surface })
 
     expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
-    expect(await ui.find({ text: '██░░░░░░ 1/4' })).toBeDefined()
+    expect(await ui.find({ text: '1/4' })).toBeDefined()
+    // A tree's root reads `•`, as a lone row does: `▾` means expanded.
+    expect((await spans(ui, 'row-20'))[0]).toEqual(['•', ''])
     expect(await ui.find({ text: /✓ 1 done/ })).toBeDefined()
     expect(await ui.find({ text: /^blocked by #24, acme\/infra#5$/ })).toBeDefined()
     expect((await ui.find({ type: 'Link', text: 'acme/infra#5' }))?.props.href).toBe('https://github.com/acme/infra/issues/5')
@@ -382,6 +384,103 @@ test('a failed check-runs read fails the refresh, as any failed read does', asyn
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: /^gh-pane: gh api: gh: HTTP 502: Bad Gateway$/ })).toBeDefined()
   expect(await ui.find({ key: 'retry' })).toBeDefined()
+})
+
+const LONG = 'a title long enough that no collapsed row at this width can show it whole'
+
+test('a row toggle expands that row alone: its title, run line, chips and facts, in that order', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(7, ['ready-for-agent', 'bug', 'docs', 'wontfix', 'XL'], { title: LONG, ...assigned('ann', 5), comments: 2, milestone: { title: 'v1' } }),
+      issue(8, ['bug'], { sub_issues_summary: { total: 4, completed: 1 } }),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const toggle = async (n: number) => (await ui.find({ key: `toggle-${n}` }))?.props.label
+  const boxes = async (n: number) => (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => key?.endsWith(`-${n}`))
+  expect(await toggle(7)).toBe('▸')
+  expect(await boxes(7)).toEqual(['row-7', 'run-7'])
+  // A collapsed parent shows its count without the bar.
+  expect(await ui.find({ text: '1/4' })).toBeDefined()
+  expect(await ui.find({ text: /█|░/ })).toBeUndefined()
+
+  await ui.press({ key: 'toggle-7' })
+  expect(await toggle(7)).toBe('▾')
+  expect(await boxes(7)).toEqual(['row-7', 'title-7', 'run-7', 'chips-7', 'facts-7'])
+  expect(await ui.find({ key: 'title-8' })).toBeUndefined()
+  // The first line keeps the number, tag and buttons; the whole title and the chips move below it.
+  expect((await spans(ui, 'row-7')).map(([text]) => text)).toEqual(['•', '#7', 'claimed (ann)'])
+  expect((await spans(ui, 'title-7')).at(-1)).toEqual([LONG, ''])
+  expect((await spans(ui, 'run-7')).at(-1)).toEqual(['◐ claimed 5h ago, no PR yet', 'cyan'])
+  // Each chip on its label's colour, its ink black or white by the colour's brightness.
+  expect((await spans(ui, 'chips-7')).filter(([, color]) => color.includes(' on '))).toEqual([
+    [' bug ', '#ffffff on #d73a4a'],
+    [' docs ', '#000000 on #fbca04'],
+    [' wontfix ', '#000000 on #ffffff'],
+    [' XL ', '#ffffff on #1d1d1d'],
+  ])
+  // The tag already names ann, so the facts line does not.
+  expect((await spans(ui, 'facts-7')).at(-1)?.[0]).toBe('updated 3h ago · 2 comments · v1')
+
+  await ui.press({ key: 'toggle-8' })
+  expect(await ui.find({ text: '██░░░░░░ 1/4' })).toBeDefined()
+  await ui.press({ key: 'toggle-7' })
+  expect(await toggle(7)).toBe('▸')
+  expect(await boxes(7)).toEqual(['row-7', 'run-7'])
+})
+
+test('the facts line names the assignees on an in PR row, and a milestone only when set', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(3, [], { ...assigned('bob', 1), comments: 1 }),
+      { ...issue(50, []), pull_request: {}, html_url: 'https://github.com/acme/widgets/pull/50', body: 'Closes #3' },
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'toggle-3' })
+  expect((await spans(ui, 'facts-3')).at(-1)?.[0]).toBe('bob · updated 3h ago · 1 comment')
+})
+
+test('expand all is a mode: rows toggled against it stay, pressing it again clears them, and new issues follow it', async ($, on) => {
+  const { clock, fixture } = host(on, { issues: [issue(7, []), issue(8, [])] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const expanded = async () => (await ui.findAll({ type: 'Box' })).flatMap(box => /^title-(\d+)$/.exec(box.key ?? '')?.[1] ?? []).map(Number)
+  const mode = async () => (await ui.find({ key: 'expand' }))?.props
+  expect(await mode()).toEqual(expect.objectContaining({ label: 'expand all', hotkey: 'e' }))
+
+  await ui.press({ key: 'expand' })
+  expect((await mode())?.label).toBe('collapse all')
+  expect(await expanded()).toEqual([7, 8])
+  await ui.press({ key: 'toggle-7' })
+  expect(await expanded()).toEqual([8])
+
+  await ui.press({ key: 'expand' })
+  expect((await mode())?.label).toBe('expand all')
+  expect(await expanded()).toEqual([])
+  await ui.press({ key: 'expand' })
+  expect(await expanded()).toEqual([7, 8])
+
+  fixture.issues = [...fixture.issues, issue(9, [])]
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(await expanded()).toEqual([7, 8, 9])
+})
+
+test('expanded rows survive a /clear that empties the session state', async ($, on) => {
+  host(on)
+  const session = { isCleared: false }
+  on('state.get', (_$, e, next) => (session.isCleared ? { value: { value: undefined, version: 0 } } : next(e)))
+  await open($)
+  const before = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await before.press({ key: 'toggle-24' })
+  await before.unmount()
+  session.isCleared = true
+  const after = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await after.find({ key: 'toggle-24' }))?.props.label).toBe('▾')
+  expect(await after.find({ key: 'title-24' })).toBeDefined()
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
