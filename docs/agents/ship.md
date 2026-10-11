@@ -53,8 +53,8 @@ docs/contributing/coding-standards.md
 
 Proves: the changed mod's behaviour in a real Claude Code session, step 4 of the mod dev loop in CLAUDE.md
 Applies when: the change alters what a mod under `plugins/` does at run time (a hook, a pane, a band, a command, a message); not a change to tests, types or docs alone
-Run: `claude -p "<a prompt that exercises the change>" --plugin-dir plugins/<name> < /dev/null`; for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`) or that draws a pane or band, an interactive `claude --plugin-dir plugins/<name>` in a Herdr tab
-Needs: a signed-in Claude Code on PATH: `claude auth status` reports `"loggedIn": true`; Herdr (`HERDR_ENV=1`) for the interactive form
+Run: `claude -p "<a prompt that exercises the change>" --plugin-dir plugins/<name> < /dev/null`; for a mod whose calls refuse headless (on 2.1.288, `$.session.compact`), an interactive `claude --plugin-dir plugins/<name>`
+Needs: a signed-in Claude Code on PATH: `claude auth status` reports `"loggedIn": true`
 Without it: hand-off
 Also proven by CI: None.
 Claims to probe: each plugin API call or event the change relies on, read in the running build's types file, `plugins/<name>/.claude-plugin/types/claude-code/index.d.ts`

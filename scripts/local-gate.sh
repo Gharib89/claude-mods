@@ -66,7 +66,9 @@ if [ "$lane" = small ]; then
   # The one node: a mod folder runs its own suite (`claude plugin test` takes a
   # folder, never a file, on 2.1.296); any other node is a changed document,
   # which check.sh edit lints.
-  if [ -d "$small" ]; then run tests claude plugin test "$small"
+  if [ -f "$small/.claude-plugin/plugin.json" ]; then
+    if command -v claude >/dev/null; then run tests claude plugin test "$small"
+    else mark tests unavailable; fi
   else run tests scripts/check.sh edit "$small"; fi
 else
   # No CHECK_DEADLINE: `full` is measured only, and a deadline would have
