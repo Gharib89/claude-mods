@@ -391,11 +391,7 @@ export const register: Register = (on, options) => {
           <Text dimColor>{prefix}</Text>
           <Button key={`toggle-${issue.number}`} plain label={open ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
           {open ? (
-            <Box flexShrink={1}>
-              <Text bold={state.isReady === true} wrap="wrap">
-                {ref(issue.number)} {issue.title}
-              </Text>
-            </Box>
+            <Text bold={state.isReady === true}>{ref(issue.number)}</Text>
           ) : (
             <Text bold={state.isReady === true}>
               {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 38 - (look.dots ? labels.length : 0)))}
@@ -438,6 +434,18 @@ export const register: Register = (on, options) => {
             <Button key={`triage-${issue.number}`} plain label="triage" onPress={() => propose($, triage([issue.number]))} />
           )}
         </Box>,
+        open && (
+          <Box key={`title-${issue.number}`} gap={1}>
+            <Box flexShrink={0}>
+              <Text dimColor>{pad.replace('↳', ' ')}</Text>
+            </Box>
+            <Box flexShrink={1}>
+              <Text bold={state.isReady === true} wrap="wrap">
+                {issue.title}
+              </Text>
+            </Box>
+          </Box>
+        ),
         run && (
           <Box key={`run-${issue.number}`} gap={1}>
             <Text dimColor>{pad}</Text>
