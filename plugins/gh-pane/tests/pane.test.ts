@@ -12,12 +12,17 @@ const PANE = {
 } as const
 
 type Raw = Record<string, unknown>
+/** Label colours as GitHub answers them: hex without `#`; `blank` is a label whose colour reads empty. */
+const COLORS: Record<string, string> = { bug: 'd73a4a', XL: '1d1d1d', wontfix: 'ffffff', docs: 'fbca04', blank: '' }
 const issue = (number: number, labels: string[], extra: Raw = {}): Raw => ({
   number,
   title: `issue ${number}`,
   html_url: `https://github.com/acme/widgets/issues/${number}`,
-  labels: labels.map(name => ({ name })),
+  labels: labels.map(name => ({ name, color: COLORS[name] ?? 'ededed' })),
   assignees: [],
+  updated_at: ago(3),
+  comments: 0,
+  milestone: null,
   body: '',
   ...extra,
 })
@@ -49,6 +54,13 @@ const linked = (number: number, state: string, repo = 'acme/widgets') => ({
   repository_url: `https://api.github.com/repos/${repo}`,
 })
 
+/** A PR head's check runs, as the check-runs read answers them. */
+const checks = (...runs: [status: string, conclusion: string | null][]) => ({
+  total_count: runs.length,
+  check_runs: runs.map(([status, conclusion]) => ({ status, conclusion })),
+})
+const checksOf = (pr: number) => `repos/acme/widgets/commits/refs/pull/${pr}/head/check-runs?per_page=100`
+
 const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/20/sub_issues?per_page=100': [
     linked(23, 'closed'),
@@ -75,14 +87,25 @@ const PORCELAIN = [
   'worktree /w/wt/9\nHEAD 3\nbranch refs/heads/feat/9',
 ].join('\n\n')
 
-type Host = { issues?: Raw[]; ghFails?: string; ghMissing?: boolean; isOffGitHub?: boolean; openFails?: string; isSubmitBroken?: boolean; pullFails?: string }
+type Host = {
+  issues?: Raw[]
+  ghFails?: string
+  ghMissing?: boolean
+  isOffGitHub?: boolean
+  openFails?: string
+  isSubmitBroken?: boolean
+  pullFails?: string
+  /** Each PR's check runs; a PR left out has none. */
+  ci?: Record<number, ReturnType<typeof checks>>
+  checksFail?: string
+}
 
 /**
  * Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails.
  * `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent` and `ran` are the prompts and
  * the commands the mod submitted or ran, `typed` the prompts a person typed.
  */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail }: Host = {}) {
   const calls: string[][] = []
   const fixture = { issues }
   const pulls: Record<number, boolean> = {}
@@ -119,6 +142,8 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
       return ok(JSON.stringify([[{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }]]))
     }
     if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([fixture.issues]))
+    const runs = /commits\/refs\/pull\/(\d+)\/head\/check-runs/.exec(path)
+    if (runs) return checksFail === undefined ? ok(JSON.stringify([ci[Number(runs[1])] ?? checks()])) : fail(`${checksFail}\n`)
     return ok(JSON.stringify([API[path] ?? []]))
   })
   const opened: string[] = []
@@ -167,6 +192,23 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
   return { calls, filled, clock, panes, repo, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
+}
+
+type Mounted = Awaited<ReturnType<Engine['ui']['mount']>>
+type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
+const textOf = (node: unknown): string =>
+  typeof node === 'string' ? node : (node as Drawn).type === 'Link' ? String((node as Drawn).props.label) : ((node as Drawn).children ?? []).map(textOf).join('')
+/** What the Box keyed `key` draws: one [text, colour] per Text holding no Text, in order; a chip's colour reads `<ink> on <background>`. */
+async function spans(ui: Mounted, key: string): Promise<[string, string][]> {
+  const walk = (node: unknown): [string, string][] => {
+    if (typeof node === 'string') return []
+    const { type, props, children = [] } = node as Drawn
+    if (type !== 'Text' || children.some(child => (child as Drawn).type === 'Text')) return children.flatMap(walk)
+    const color = String(props.color ?? '')
+    return [[textOf(node), props.backgroundColor === undefined ? color : `${color} on ${String(props.backgroundColor)}`]]
+  }
+  const found = await ui.find({ key })
+  return found === undefined ? [] : walk(found)
 }
 
 const open = ($: Engine) =>
@@ -249,7 +291,7 @@ test('the pane follows a non-default userConfig', {
 }, async ($, on) => {
   const { filled } = host(on, {
     issues: [
-      issue(7, ['go']),
+      issue(7, ['go', 'bug']),
       issue(8, ['inbox']),
       issue(9, ['go'], assigned('ann', 1)),
       issue(10, ['ready-for-agent']),
@@ -268,11 +310,78 @@ test('the pane follows a non-default userConfig', {
   expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
   expect(await ui.find({ text: 'yours' })).toBeDefined()
   expect(await ui.find({ key: 'ship-10' })).toBeUndefined()
+  // The state labels hidden are the configured ones: `go` hides, the default `ready-for-agent` shows.
+  expect((await spans(ui, 'row-7')).filter(([text]) => text === '●')).toEqual([['●', '#d73a4a']])
+  expect((await spans(ui, 'row-10')).filter(([text]) => text === '●')).toEqual([['●', '#ededed']])
   await ui.press({ key: 'ship-7' })
   await ui.press({ key: 'triage-8' })
   await ui.press({ key: 'release-13' })
   await ui.press({ key: 'next-15' })
   expect(filled).toEqual(['ship it 7', '/look 8', 'free #13 from cat', 'walk 14/15'])
+})
+
+test("a collapsed row shows one dot per label in the label's colour, the state labels left off", async ($, on) => {
+  host(on, {
+    issues: [
+      issue(7, ['ready-for-agent', 'bug', 'XL', 'blank']),
+      issue(8, ['needs-triage', 'needs-info', 'ready-for-human', 'wayfinder:map']),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const dots = async (n: number) => (await spans(ui, `row-${n}`)).filter(([text]) => text === '●')
+  // A label with no colour (`blank`) still draws, in GitHub's own default grey; the state labels draw none.
+  expect(await dots(7)).toEqual([
+    ['●', '#d73a4a'],
+    ['●', '#1d1d1d'],
+    ['●', '#ededed'],
+  ])
+  expect(await dots(8)).toEqual([])
+})
+
+test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, nothing with no runs', async ($, on) => {
+  const pr = (n: number, closes: string) => ({ ...issue(n, []), pull_request: {}, html_url: `https://github.com/acme/widgets/pull/${n}`, body: closes })
+  const { calls } = host(on, {
+    issues: [
+      issue(3, []),
+      issue(4, []),
+      issue(5, []),
+      issue(6, []),
+      issue(7, []),
+      pr(50, 'Closes #3, closes #7'),
+      pr(51, 'Fixes #4'),
+      pr(52, 'Resolves #5'),
+      pr(53, 'Closes #6'),
+    ],
+    ci: {
+      50: checks(['completed', 'success'], ['completed', 'skipped'], ['completed', 'neutral']),
+      51: checks(['completed', 'success'], ['completed', 'failure']),
+      52: checks(['completed', 'failure'], ['in_progress', null]),
+    },
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // What follows the row's tag.
+  const mark = async (n: number) => {
+    const row = await spans(ui, `row-${n}`)
+    return row[row.findIndex(([text]) => text.startsWith('in PR')) + 1]
+  }
+  expect(await mark(3)).toEqual(['✓', 'green'])
+  expect(await mark(7)).toEqual(['✓', 'green'])
+  expect(await mark(4)).toEqual(['✗', 'red'])
+  expect(await mark(5)).toEqual(['●', 'yellow'])
+  expect(await mark(6)).toBeUndefined()
+  // One REST read per PR that closes an open issue, by the PR's head ref.
+  const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv.at(-1))
+  expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
+})
+
+test('a failed check-runs read fails the refresh, as any failed read does', async ($, on) => {
+  host(on, { checksFail: 'gh: HTTP 502: Bad Gateway' })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ text: /^gh-pane: gh api: gh: HTTP 502: Bad Gateway$/ })).toBeDefined()
+  expect(await ui.find({ key: 'retry' })).toBeDefined()
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {

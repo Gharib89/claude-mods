@@ -331,8 +331,15 @@ export const register: Register = (on, options) => {
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
+    // The labels a row shows: all but the state labels its tag already says.
+    const stateLabels = [config.needsTriage, config.needsInfo, config.readyForAgent, config.readyForHuman, config.mapLabel]
+    const colorOf = (issue: Issue, label: string) => `#${issue.labelColors[label] || 'ededed'}`
+    const ciMark = { pass: ['✓', 'green'], fail: ['✗', 'red'], running: ['●', 'yellow'] } as const
+
     const row = (issue: Issue, prefix: string) => {
       const state = stateOf(issue, config, isMapTicket(issue))
+      const labels = issue.labels.filter(label => !stateLabels.includes(label))
+      const ci = state.pr === undefined ? undefined : view.ci[state.pr]
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•▾]/, ' ')}  ↳`
@@ -342,12 +349,22 @@ export const register: Register = (on, options) => {
           <Text bold={state.isReady === true}>
             {ref(issue.number)} {cut(issue.title, Math.max(8, room - prefix.length - 36))}
           </Text>
+          {labels.length > 0 && (
+            <Text>
+              {labels.map(label => (
+                <Text key={`dot-${issue.number}-${label}`} color={colorOf(issue, label)}>
+                  ●
+                </Text>
+              ))}
+            </Text>
+          )}
           {issue.subs.total > 0 && <Text dimColor>{`${bar} ${issue.subs.done}/${issue.subs.total}`}</Text>}
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
             {state.blockers ? blockers(state.blockers) : ''}
           </Text>
+          {ci && <Text color={ciMark[ci][1]}>{ciMark[ci][0]}</Text>}
           {state.isReady && (
             <Button key={`ship-${issue.number}`} plain label="ship" onPress={() => propose($, fill(config.shipCommand, { n: issue.number }))} />
           )}
