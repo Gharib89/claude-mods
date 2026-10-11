@@ -1,0 +1,33 @@
+name: Latest build
+
+# Validate and test every mod on the newest Claude Code, weekly. The merge gate
+# stays on the pin (`.claude-code-version`, mods.yml), so this never blocks a
+# PR: a red run says a newer build breaks a mod, which is the cue to fix it and
+# move the pin before users on that build meet it.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the newest Claude Code
+        run: npm install -g @anthropic-ai/claude-code@latest # zizmor: ignore[adhoc-packages]
+
+      - name: Validate the marketplace and the mods
+        run: |
+          claude --version
+          claude plugin validate .
+          for mod in plugins/*/; do claude plugin validate "$mod"; done
+
+      - name: Test
+        run: for mod in plugins/*/; do claude plugin test "$mod"; done
