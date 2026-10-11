@@ -27,7 +27,7 @@ Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace, then vali
 No-checks legal: no, `mods.yml` runs on every PR with no `paths:` filter, so a PR with no checks means CI never started.
 Push policy: Default.
 
-`.github/workflows/mods.yml` also runs on push to `main`. `.github/workflows/claude-review.yml` is the Claude reviewer, triggered by `issue_comment`. It lands no check run on the PR head, so it is not a leg.
+`.github/workflows/mods.yml` also runs on push to `main`. `.github/workflows/claude-review.yml` is the Claude reviewer, triggered by `issue_comment`. It lands no check run on the PR head, so it is not a leg. `.github/workflows/latest.yml` validates and tests the mods weekly on the newest Claude Code, triggered by `schedule` and `workflow_dispatch` only; with no `pull_request` trigger it is not a leg either.
 
 ## Reviewers
 
