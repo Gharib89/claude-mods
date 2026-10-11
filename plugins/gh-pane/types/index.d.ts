@@ -31,9 +31,12 @@ export type Issue = {
   worktree?: string
 }
 
+/** A PR's check runs, all read: every one passed (or skipped, or neutral), one failed, or one still running. */
+export type CiState = 'pass' | 'fail' | 'running'
+
 export type Snapshot =
   /** `ci`: each PR that closes an open issue, by number, read from its head's check runs; absent when it has none. */
-  | { repo: string; issues: Issue[]; prs: number; fetchedAt: string; ci: Record<number, 'pass' | 'fail' | 'running'> }
+  | { repo: string; issues: Issue[]; prs: number; fetchedAt: string; ci: Record<number, CiState> }
   | { error: string }
 
 /** Where this session stands at a ship run's merge gate, or once a ship run merged on its own: the PR and the band's offer. */

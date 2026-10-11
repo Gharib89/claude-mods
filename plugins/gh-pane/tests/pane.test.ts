@@ -354,6 +354,8 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
       pr(51, 'Fixes #4'),
       pr(52, 'Resolves #5'),
       pr(53, 'Closes #6'),
+      // Closes only an issue that is no longer open: no read.
+      pr(54, 'Closes #99'),
     ],
     ci: {
       50: checks(['completed', 'success'], ['completed', 'skipped'], ['completed', 'neutral']),
@@ -373,7 +375,7 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
   expect(await mark(4)).toEqual(['✗', 'red'])
   expect(await mark(5)).toEqual(['●', 'yellow'])
   expect(await mark(6)).toBeUndefined()
-  // One REST read per PR that closes an open issue, by the PR's head ref.
+  // One REST read per PR that closes an open issue, by the PR's head ref; none for #54.
   const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv.at(-1))
   expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
 })
