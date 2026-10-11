@@ -63,7 +63,11 @@ fi
 
 run deps  true                           # no stack with a lockfile yet: nothing to install
 if [ "$lane" = small ]; then
-  run tests scripts/check.sh edit "$small" # the one node is a changed document: check.sh edit lints it
+  # The one node: a mod folder runs its own suite (`claude plugin test` takes a
+  # folder, never a file, on 2.1.296); any other node is a changed document,
+  # which check.sh edit lints.
+  if [ -d "$small" ]; then run tests claude plugin test "$small"
+  else run tests scripts/check.sh edit "$small"; fi
 else
   # No CHECK_DEADLINE: `full` is measured only, and a deadline would have
   # check.sh skip whatever it had not reached.
