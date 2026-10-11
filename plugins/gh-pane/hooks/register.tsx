@@ -361,7 +361,7 @@ export const register: Register = (on, options) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
       const ci = state.pr === undefined ? undefined : view.ci[state.pr]
-      const isOpen = expanded.all !== expanded.flipped.has(issue.number)
+      const isExpanded = expanded.all !== expanded.flipped.has(issue.number)
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•]/, ' ')}  ↳`
@@ -393,12 +393,12 @@ export const register: Register = (on, options) => {
       return [
         <Box key={`row-${issue.number}`} gap={1}>
           <Text dimColor>{prefix}</Text>
-          <Button key={`toggle-${issue.number}`} plain label={isOpen ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
+          <Button key={`toggle-${issue.number}`} plain label={isExpanded ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
           <Text bold={state.isReady === true}>
             {ref(issue.number)}
-            {isOpen ? '' : ` ${cut(issue.title, titleRoom)}`}
+            {isExpanded ? '' : ` ${cut(issue.title, titleRoom)}`}
           </Text>
-          {!isOpen && labels.length > 0 && (
+          {!isExpanded && labels.length > 0 && (
             <Text>
               {labels.map(label => (
                 <Text key={`dot-${issue.number}-${label}`} color={colorOf(issue, label)}>
@@ -407,7 +407,7 @@ export const register: Register = (on, options) => {
               ))}
             </Text>
           )}
-          {issue.subs.total > 0 && <Text dimColor>{`${isOpen ? `${bar} ` : ''}${issue.subs.done}/${issue.subs.total}`}</Text>}
+          {issue.subs.total > 0 && <Text dimColor>{`${isExpanded ? `${bar} ` : ''}${issue.subs.done}/${issue.subs.total}`}</Text>}
           <Text color={state.color}>
             {state.tag}
             {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
@@ -419,7 +419,7 @@ export const register: Register = (on, options) => {
           ))}
         </Box>,
         // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
-        isOpen && (
+        isExpanded && (
           <Box key={`title-${issue.number}`} gap={1}>
             <Box flexShrink={0}>
               <Text dimColor>{indent}</Text>
@@ -447,7 +447,7 @@ export const register: Register = (on, options) => {
             )}
           </Box>
         ),
-        isOpen && labels.length > 0 && (
+        isExpanded && labels.length > 0 && (
           <Box key={`chips-${issue.number}`} gap={1}>
             <Box flexShrink={0}>
               <Text dimColor>{indent}</Text>
@@ -461,7 +461,7 @@ export const register: Register = (on, options) => {
             </Box>
           </Box>
         ),
-        isOpen && (
+        isExpanded && (
           <Box key={`facts-${issue.number}`} gap={1}>
             <Text dimColor>{indent}</Text>
             <Text dimColor>{facts.join(' · ')}</Text>
