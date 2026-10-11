@@ -485,6 +485,22 @@ test('expanded rows survive a /clear that empties the session state', async ($, 
   expect(await after.find({ key: 'title-24' })).toBeDefined()
 })
 
+test('a snapshot from before CI marks, still in the session state, draws as no snapshot', async ($, on) => {
+  host(on)
+  // What 0.6.0 wrote: no `ci`, and issues with no label colours.
+  on('state.get', async (_$, e, next) => {
+    const got = await next(e)
+    const view = got.value?.value as { ci?: unknown; issues?: object[] } | null | undefined
+    if (got.value === undefined || !view?.issues) return got
+    const old = { ...view, issues: view.issues.map(issue => ({ ...issue, labelColors: undefined })) }
+    delete old.ci
+    return { value: { ...got.value, value: old } }
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'row-24' })).toBeDefined()
+})
+
 test('at 55 columns a collapsed title takes what its measured tail leaves', async ($, on) => {
   host(on, {
     issues: [

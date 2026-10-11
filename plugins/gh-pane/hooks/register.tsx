@@ -308,7 +308,9 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
-    const view = (await read($, snapshot)) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
+    // A snapshot an older version wrote (no `ci`) may still be in `$.state` once the mod reloads, and draws as none.
+    const stored = await read($, snapshot)
+    const view = (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     // A failed read (a network blip) holds the pane until the next re-read, so retry starts one now.
