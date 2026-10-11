@@ -23,7 +23,7 @@ The gate runs `scripts/check.sh full` from the harness, plus `secrets` (gitleaks
 
 ## CI
 
-Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace, then validate, tsc and test every mod under `plugins/`) on Claude Code 2.1.288
+Legs: check: the mod dev loop, steps 1 to 3 (validate the marketplace, then validate, tsc and test every mod under `plugins/`) on the Claude Code build `.claude-code-version` pins
 No-checks legal: no, `mods.yml` runs on every PR with no `paths:` filter, so a PR with no checks means CI never started.
 Push policy: Default.
 
@@ -89,7 +89,7 @@ Agent-facing: docs/agents/, .claude/skills/
 ## Current docs
 
 Sources: context7
-Pinned: Claude Code 2.1.288
+Pinned: Claude Code at the build `.claude-code-version` pins
 
 The plugin API (function hooks) is early access and moves between Claude Code releases. Its authority is the bundled `plugin-authoring` skill's types file for the installed version, not web docs or context7.
 

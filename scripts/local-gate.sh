@@ -63,8 +63,8 @@ fi
 
 run deps  true                           # no stack with a lockfile yet: nothing to install
 if [ "$lane" = small ]; then
-  # The one node: a mod folder runs its own suite (`claude plugin test` takes a
-  # folder, never a file, on 2.1.296); any other node is a changed document,
+  # The one node: a mod folder runs its own suite (`plugin test` takes a
+  # folder, never a file, on 2.1.288); any other node is a changed document,
   # which check.sh edit lints.
   if [ -f "$small/.claude-plugin/plugin.json" ]; then
     if command -v npx >/dev/null; then run tests scripts/claude-pinned.sh plugin test "$small"

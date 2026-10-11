@@ -45,7 +45,7 @@ FULL_RUN='prek run --all-files'
 # shellcheck disable=SC2016 # each row's own subshell expands $d
 TURN_ROWS='plugins/|mods|*.ts *.tsx plugin.json hooks.json tsconfig.json|for d in */; do "$root/scripts/claude-pinned.sh" plugin validate "$d" && continue; exit; done|for d in */; do "$root/scripts/claude-pinned.sh" plugin test "$d" && continue; exit; done|'
 # Extra checks on `full` only, one per line: <name>|<command>, from the root.
-# `full` runs marketplace beside the mods row. Safe on Claude Code 2.1.296:
+# `full` runs marketplace beside the mods row. Safe on Claude Code 2.1.288 (the pin):
 # `plugin test` and `plugin validate` write nothing under plugins/ (traced),
 # and only a session loading a mod generates its .claude-plugin/types/.
 FULL_ROWS='marketplace|scripts/claude-pinned.sh plugin validate .'
