@@ -479,7 +479,7 @@ export const register: Register = (on, options) => {
       const blockerLinks: { label: string; url?: string; sep: string }[] = issue.blockers.map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
       return [
         // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width
-        // (seen on 2.1.312, at 120 and 60 columns).
+        // (seen on 2.1.312 at 120 and 60 columns, and on 2.1.288 at 120).
         <Box key={`row-${issue.number}`} gap={1}>
           <Box flexShrink={0} gap={1}>
             <Text dimColor>{prefix}</Text>
