@@ -4,7 +4,7 @@
 // reply, and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
-import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { Elements, EngineInterface, PluginOptions, Register, Timer } from 'claude-code'
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
@@ -52,6 +52,8 @@ let kept: { cwd: string; view: Snapshot } | null = null
 // Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
 // is one: it outlives the /clear the next button runs.
 const expansion = new Map<string, { all: boolean; flipped: Set<number> }>()
+// The 120 s re-read: a later session.start in this process replaces it rather than stacking a second.
+let ticking: Timer | undefined
 
 // Black or white ink on a label's hex colour, by perceived brightness.
 const inkOn = (hex: string) => {
@@ -280,7 +282,8 @@ export const register: Register = (on, options) => {
       // Typed mid-turn, the pane opens or hides at once instead of waiting for the turn to end.
       immediate: true,
     })
-    $.clock.every(120_000, () => refreshIfOpen($, config))
+    ticking?.cancel()
+    ticking = $.clock.every(120_000, () => refreshIfOpen($, config))
     return next(e)
   })
 

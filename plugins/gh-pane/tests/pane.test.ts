@@ -799,6 +799,18 @@ test('three triggers during one read cause exactly one rerun, once that read lan
   expect(reads()).toBe(3)
 })
 
+test('a second session.start in one process keeps one 120 s timer', async ($, on) => {
+  const { calls, clock } = host(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
+  await open($)
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
+  await clock.advance(120_000)
+  expect(reads()).toBe(2)
+})
+
 test('a timer tick or a re-read that fails says so in a toast', async ($, on) => {
   const { clock, panes, toasts } = host(on)
   on('tool.call', async () => ({ result: '' }))
