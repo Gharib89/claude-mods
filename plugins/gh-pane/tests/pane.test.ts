@@ -293,7 +293,7 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     filled.length = 0
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
+    expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale')
     // A tree's root reads `•`, as a lone row does: `▾` means expanded.
     expect((await spans(ui, 'row-20'))[0]).toEqual(['•', ''])
     // A parent labelled ready-for-human reads yours, not spec.
@@ -407,7 +407,7 @@ test('the pane follows a non-default userConfig', {
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 2 · runs: 1 active · 1 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/5 PRs · 1 running · 1 stale')
   expect(await ui.find({ text: /◐ ship worktree 9/ })).toBeDefined()
   expect(await ui.find({ text: /needs triage \(1\)/ })).toBeDefined()
   expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
@@ -684,11 +684,12 @@ test('a collapsed title is whole, in a growing Box, and the engine truncates it 
   host(on, { issues: [issue(7, ['ready-for-human', 'bug'], { title: LONG })] })
   await open($)
   const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 49 }, surface: 'terminal' })
-  const [title] = (await ui.findAll({ type: 'Text' })).filter(text => text.props.wrap === 'truncate-end')
-  expect(title?.props.children ?? textOf(title)).toBe(LONG)
   const holder = (await ui.findAll({ type: 'Box' })).find(box => box.props.flexGrow === 1)
   expect(holder).toBeDefined()
   expect(textOf(holder)).toBe(LONG)
+  // The header's line truncates too, so the title is the one in the growing Box.
+  const title = (holder as unknown as Drawn).children?.[0] as Drawn
+  expect([title.type, title.props.wrap]).toEqual(['Text', 'truncate-end'])
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
@@ -707,7 +708,7 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   // Ready now counts the next rows: #7 and #11.
-  expect(await ui.find({ text: 'PR cap 0/3 · ready now: 2 · runs: 3 active · 0 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · 3 running')
   expect(await ui.find({ text: /untriaged/ })).toBeUndefined()
   expect(await tail(ui, 9)).toEqual(['by #6', 'warning'])
   // A map ticket resolves by a closing comment, not a PR: an old claim is not stale.
@@ -903,9 +904,30 @@ for (const [name, setup, line] of [
     await open($)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await ui.find({ text: line })).toBeDefined()
-    expect(await ui.find({ text: /PR cap/ })).toBeUndefined()
+    expect(await ui.find({ key: 'header' })).toBeUndefined()
   })
 }
+
+test('the header links the repo and counts ready rows and PRs, with running and stale runs only when nonzero', async ($, on) => {
+  const { fixture, clock } = host(on)
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // A stale claim reads error, whatever the cap.
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale', 'error']])
+  expect((await ui.find({ type: 'Link', text: 'acme/widgets' }))?.props.href).toBe('https://github.com/acme/widgets')
+
+  fixture.issues = [issue(29, ['ready-for-human'])]
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 0 ready · 0/3 PRs', 'subtle']])
+})
+
+test('a full PR cap with no stale claim reads warning', { options: { prCap: 1 } }, async ($, on) => {
+  host(on, { issues: [issue(36, ['ready-for-agent']), issue(37, ['ready-for-agent'], assigned('ann', 2)), { ...issue(31, []), pull_request: {}, body: 'Closes #36' }] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 0 ready · 1/1 PRs · 1 running', 'warning']])
+})
 
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
   const { calls, clock, backlog } = host(on)
@@ -919,7 +941,7 @@ test('a failed read offers retry, and the header offers refresh; each re-reads n
   await ui.press({ key: 'retry' })
   await clock.settle()
   expect(reads()).toBe(2)
-  expect(await ui.find({ text: /PR cap/ })).toBeDefined()
+  expect(await ui.find({ key: 'header' })).toBeDefined()
 
   await ui.press({ key: 'refresh' })
   await clock.settle()
@@ -1119,13 +1141,13 @@ test('after a /clear empties the session state, the open pane still draws the la
   session.isCleared = true
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: /Reading the repo/ })).toBeUndefined()
-  expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale')
   await ui.unmount()
   // A session in another folder never draws this one's read.
   folder.cwd = '/w/other'
   const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await other.find({ text: /Reading the repo/ })).toBeDefined()
-  expect(await other.find({ text: /PR cap/ })).toBeUndefined()
+  expect(await other.find({ key: 'header' })).toBeUndefined()
 })
 
 const GATE = 'Ready to merge. Reply "merge" to squash-merge, close the issue, and clean up.\nPR: https://github.com/acme/widgets/pull/42'

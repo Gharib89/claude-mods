@@ -396,6 +396,7 @@ export const register: Register = (on, options) => {
     )
     const lines = [...runs.values()].filter(line => line !== null)
     const stale = lines.filter(line => line.isStale).length
+    const running = lines.length - stale
     // Ready now: every row with a button that starts work, a ship or a map's next.
     const ready = view.issues.filter(issue => {
       const state = stateOf(issue, config, isMapTicket(issue))
@@ -575,9 +576,16 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={room}>
-        <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
-          {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
-        </Text>
+        <Box key="header">
+          <Text color={stale > 0 ? 'error' : isCapFull ? 'warning' : 'subtle'} wrap="truncate-end">
+            <Link href={`https://github.com/${view.repo}`} label={view.repo} />
+            {[
+              ` · ${ready} ready · ${view.prs}/${config.prCap} PRs`,
+              running > 0 ? ` · ${running} running` : '',
+              stale > 0 ? ` · ${stale} stale` : '',
+            ].join('')}
+          </Text>
+        </Box>
         <Box gap={1}>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
           <Button
