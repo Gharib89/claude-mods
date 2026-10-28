@@ -8,7 +8,7 @@ import type { Elements, EngineInterface, PluginOptions, Register, RenderChildren
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
-import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wordsOf } from './rules'
+import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wrapped } from './rules'
 
 const PANE = 'gh-pane'
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
@@ -508,7 +508,7 @@ export const register: Register = (on, options) => {
           lined(
             `title-${issue.number}`,
             indent,
-            wordsOf(issue.title, width).map(line => (
+            wrapped(issue.title, width).map(line => (
               <Text bold={state.isReady === true} wrap="truncate-end">
                 {line}
               </Text>
@@ -556,7 +556,7 @@ export const register: Register = (on, options) => {
           lined(
             `facts-${issue.number}`,
             indent,
-            wordsOf(facts.join(' · '), width).map(line => <Text dimColor>{line}</Text>),
+            wrapped(facts.join(' · '), width).map(line => <Text dimColor>{line}</Text>),
           ),
       ]
     }

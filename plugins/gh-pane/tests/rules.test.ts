@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ageOf, cellsOf, closesOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wordsOf, worktreeIssue } from '../hooks/rules'
+import { ageOf, cellsOf, closesOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, worktreeIssue, wrapped } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
@@ -58,14 +58,20 @@ test('a wide character or an emoji takes two cells, any other character one', ()
   expect(cellsOf('日本語')).toBe(6)
   expect(cellsOf('fix 🚀 now')).toBe(10)
   expect(cellsOf('▶ ◆ ⊘')).toBe(5)
+  // Each block's edges: Hangul Jamo, CJK, Hangul, fullwidth forms, Kana Supplement, the astral ideographs.
+  for (const char of ['\u1100', '\u115f', '\u4e00', '\u9fff', '\uac00', '\ud7a3', '\uff01', '\uff60', '\u{1b000}', '\u{1b2ff}', '\u{20000}', '\u{3fffd}']) expect([char, cellsOf(char)]).toEqual([char, 2])
+  for (const char of ['\u10ff', '\u1160', '\uff61', '\u{1afff}', '\u{1b300}']) expect([char, cellsOf(char)]).toEqual([char, 1])
 })
 
-test('wordsOf packs text by cells and breaks a word wider than the line, wide characters included', () => {
-  expect(wordsOf('aa bb cc', 5)).toEqual(['aa bb', 'cc'])
-  expect(wordsOf('abcdefgh', 3)).toEqual(['abc', 'def', 'gh'])
+test('wrapped packs text by cells and breaks a word wider than the line, wide characters included', () => {
+  expect(wrapped('aa bb cc', 5)).toEqual(['aa bb', 'cc'])
+  // Runs of spaces and empty text leave no empty piece behind.
+  expect(wrapped('ab  cd ef', 4)).toEqual(['ab', 'cd', 'ef'])
+  expect(wrapped('', 10)).toEqual([])
+  expect(wrapped('abcdefgh', 3)).toEqual(['abc', 'def', 'gh'])
   // Six wide characters draw 12 cells: in 5 they take three lines of at most 4.
-  expect(wordsOf('日本語日本語', 5)).toEqual(['日本', '語日', '本語'])
-  for (const line of wordsOf('修正 the 日本語のタイトル row', 8)) expect([line, cellsOf(line) <= 8]).toEqual([line, true])
+  expect(wrapped('日本語日本語', 5)).toEqual(['日本', '語日', '本語'])
+  for (const line of wrapped('修正 the 日本語のタイトル row', 8)) expect([line, cellsOf(line) <= 8]).toEqual([line, true])
 })
 
 test('a matching worktree names the run', () => {

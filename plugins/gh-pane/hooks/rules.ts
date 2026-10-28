@@ -27,7 +27,7 @@ export function ageOf(now: string, then: string): string {
   return hours < 1 ? 'just now' : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
 }
 
-/** `items` in lines of at most `room` columns, one column between items; an item wider than `room` takes a line alone. */
+/** `items` in lines of at most `room` cells, one cell between items; an item wider than `room` takes a line alone. */
 export function pack<T>(items: T[], room: number, width: (item: T) => number): T[][] {
   const lines: T[][] = []
   let used = 0
@@ -45,7 +45,7 @@ export function pack<T>(items: T[], room: number, width: (item: T) => number): T
 }
 
 // East Asian wide and fullwidth blocks, and the emoji a terminal draws wide by default.
-const WIDE = /[\p{Emoji_Presentation}ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{20000}-\u{3fffd}]/u
+const WIDE = /[\p{Emoji_Presentation}ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{1b000}-\u{1b2ff}\u{20000}-\u{3fffd}]/u
 
 /** Terminal cells `text` draws in: two for a wide character or an emoji, one for any other. */
 export function cellsOf(text: string): number {
@@ -55,8 +55,8 @@ export function cellsOf(text: string): number {
 }
 
 /** `text` in lines of at most `width` cells, split at spaces; a word wider than `width` breaks across lines. */
-export function wordsOf(text: string, width: number): string[] {
-  const pieces = text.split(' ').flatMap(word => {
+export function wrapped(text: string, width: number): string[] {
+  const pieces = text.split(' ').filter(Boolean).flatMap(word => {
     const parts = ['']
     for (const char of word) {
       if (parts.at(-1) !== '' && cellsOf(parts.at(-1)! + char) > width) parts.push('')
