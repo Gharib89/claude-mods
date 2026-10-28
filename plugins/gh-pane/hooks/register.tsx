@@ -62,13 +62,10 @@ const age = (now: string, then: string) => {
   return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
 }
 
-const runnerOf = ($: EngineInterface): Runner => async argv => {
-  const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
+const runnerOf = ($: EngineInterface): Runner => argv =>
+  $.process.run(argv).catch((error: unknown) => {
     throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
   })
-  if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
-  return stdout
-}
 
 // Answers the snapshot it read, landed or not: a read overtaken by a newer one is still fresh for its caller.
 async function refresh($: EngineInterface, config: Config): Promise<Snapshot> {

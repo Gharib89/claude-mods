@@ -4,15 +4,53 @@
 import type { CiState, Issue, Snapshot } from '../types'
 import { closesOf, worktreeIssue } from './rules'
 
-/** Runs argv on the host and answers its stdout, throwing on a nonzero exit; register.tsx owns `$`. */
-export type Runner = (argv: string[]) => Promise<string>
+/** Runs argv on the host and answers how it exited, rejecting only when it could not run; register.tsx owns `$`. */
+export type Runner = (argv: string[]) => Promise<{ exitCode: number; stdout: string; stderr: string }>
 
 type Raw = Record<string, any>
 
-// `--jq` runs `filter` on every page and prints one JSON value per line; `--slurp` would do the same in one array, but
-// needs gh 2.48+. Every path read here answers a list of objects, except check runs: one object per page, its runs in `.check_runs`.
-const list = async (run: Runner, path: string, filter = '.[]'): Promise<Raw[]> =>
-  (await run(['gh', 'api', '--paginate', path, '--jq', filter])).split('\n').filter(line => line !== '').map(line => JSON.parse(line))
+/** Runs argv and answers its stdout, throwing on any nonzero exit. */
+async function out(run: Runner, argv: string[]): Promise<string> {
+  const { exitCode, stdout, stderr } = await run(argv)
+  if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
+  return stdout
+}
+
+// Each page read, by the path or URL it was read from: its ETag, its body and the next page's URL. A 304 answers
+// this body, and carries no Link header, so the next page comes from here too. A module variable for the reason
+// register.tsx's `kept` is one: it outlives a /clear. A path names no repo (`{owner}/{repo}`), but an ETag names its
+// body, so a 304 answers the right body whichever checkout read it first.
+const pages = new Map<string, { etag: string; body: any; next?: string }>()
+
+/**
+ * Every page of `path`, one `gh api -i` call each, conditional on that page's last ETag: GitHub charges no rate
+ * limit for a 304. Never `--paginate`, whose pagination a 304 on the first page stops (measured on gh 2.103).
+ * `pick` takes a page's items from its body: every path read here answers a list, except check runs.
+ */
+async function list(run: Runner, path: string, pick = (body: any): Raw[] => body): Promise<Raw[]> {
+  const items: Raw[] = []
+  for (let url: string | undefined = path; url !== undefined; ) {
+    const cached = pages.get(url)
+    const argv = ['gh', 'api', '-i', ...(cached ? ['-H', `If-None-Match: ${cached.etag}`] : []), url]
+    const { exitCode, stdout, stderr } = await run(argv)
+    // gh prints the status line and headers on stdout, then a blank line and the body, and exits 1 on a 304.
+    const end = stdout.search(/\r?\n\r?\n/)
+    const head = stdout.slice(0, end)
+    let got = cached
+    if (!(cached && exitCode === 1 && /^HTTP\/\S+ 304/.test(head))) {
+      if (exitCode !== 0) throw new Error(`gh api: ${stderr.trim().split('\n')[0]}`)
+      got = {
+        etag: /^etag: *(.+?)\r?$/im.exec(head)?.[1] ?? '',
+        body: JSON.parse(stdout.slice(end).trim()),
+        next: /<([^>]+)>; *rel="next"/.exec(head)?.[1],
+      }
+      pages.set(url, got)
+    }
+    items.push(...pick(got!.body))
+    url = got!.next
+  }
+  return items
+}
 
 /** Runs `tasks` at most 8 at a time: GitHub's secondary rate limit refuses many concurrent requests. */
 async function inTurn(tasks: (() => Promise<void>)[]) {
@@ -22,15 +60,21 @@ async function inTurn(tasks: (() => Promise<void>)[]) {
   }))
 }
 
-/** The open backlog, `layout` matching each claimed issue to its ship worktree. */
+/** The open backlog, `layout` matching each claimed issue to its ship worktree, in two rounds of reads. */
 export async function readBacklog(run: Runner, layout: string, now: string): Promise<Snapshot> {
   // gh fills `{owner}/{repo}` from the checkout's remotes, and with none on a GitHub host fails in its own words.
-  const repo = (await run(['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name'])).trim()
+  const [open, porcelain] = await Promise.all([
+    list(run, 'repos/{owner}/{repo}/issues?state=open&per_page=100'),
+    out(run, ['git', 'worktree', 'list', '--porcelain']),
+  ])
+  // The canonical name, as GitHub spells it, from any open item; only an empty backlog reads the repo for it.
+  const repo = open.length > 0
+    ? open[0]!.repository_url.slice(open[0]!.repository_url.lastIndexOf('/repos/') + '/repos/'.length)
+    : (await out(run, ['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name'])).trim()
   // The first worktree listed is the main checkout.
-  const [main = '', ...paths] = [...(await run(['git', 'worktree', 'list', '--porcelain'])).matchAll(/^worktree (.+)$/gm)].map(m => m[1]!)
+  const [main = '', ...paths] = [...porcelain.matchAll(/^worktree (.+)$/gm)].map(m => m[1]!)
   const worktrees = new Map(paths.map(path => [worktreeIssue(layout, main, path), path.slice(path.lastIndexOf('/') + 1)]))
 
-  const open = await list(run, `repos/${repo}/issues?state=open&per_page=100`)
   const prs = open.filter(raw => raw.pull_request)
   const closer = new Map(prs.flatMap(pr => closesOf(pr.body ?? '').map(n => [n, pr.number as number])))
   const raws = open.filter(raw => !raw.pull_request)
@@ -53,16 +97,18 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   // Sub-issues and blockers may live in another repo, so they match by url, never by number.
   const byUrl = new Map(issues.map(issue => [issue.url, issue]))
 
-  await inTurn(
-    issues.flatMap((issue, i) => [
+  // Check runs only: legacy commit statuses answer `pending` when a repo posts none, which would mark every PR running.
+  const ci: Record<number, CiState> = {}
+  await inTurn([
+    ...issues.flatMap((issue, i) => [
       issue.subs.total > 0 && (() =>
-        list(run, `repos/${repo}/issues/${issue.number}/sub_issues?per_page=100`).then(subs => {
+        list(run, `repos/{owner}/{repo}/issues/${issue.number}/sub_issues?per_page=100`).then(subs => {
           const children = subs.flatMap(s => byUrl.get(s.html_url) ?? [])
           issue.children = children.map(child => child.number)
           for (const child of children) child.parent = issue.number
         })),
       raws[i]!.issue_dependencies_summary?.blocked_by > 0 && (() =>
-        list(run, `repos/${repo}/issues/${issue.number}/dependencies/blocked_by`).then(blockers => {
+        list(run, `repos/{owner}/{repo}/issues/${issue.number}/dependencies/blocked_by`).then(blockers => {
           issue.blockers = blockers
             .filter(b => b.state === 'open')
             .map(b => {
@@ -71,16 +117,12 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
             })
         })),
       issue.assignees.length > 0 && (() =>
-        list(run, `repos/${repo}/issues/${issue.number}/events?per_page=100`).then(events => {
+        list(run, `repos/{owner}/{repo}/issues/${issue.number}/events?per_page=100`).then(events => {
           issue.claimedAt = events.findLast(ev => ev.event === 'assigned')?.created_at
         })),
     ]).filter(task => task !== false),
-  )
-  // Check runs only: legacy commit statuses answer `pending` when a repo posts none, which would mark every PR running.
-  const ci: Record<number, CiState> = {}
-  await inTurn(
-    [...new Set(issues.flatMap(issue => issue.pr ?? []))].map(n => async () => {
-      const runs = await list(run, `repos/${repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`, '.check_runs[]')
+    ...[...new Set(issues.flatMap(issue => issue.pr ?? []))].map(n => async () => {
+      const runs = await list(run, `repos/{owner}/{repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`, body => body.check_runs)
       if (runs.length === 0) return
       ci[n] = runs.some(r => r.status !== 'completed')
         ? 'running'
@@ -88,11 +130,11 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
           ? 'pass'
           : 'fail'
     }),
-  )
+  ])
   return { repo, issues, prs: prs.length, fetchedAt: now, ci }
 }
 
 /** Whether PR `n` of the session repo is merged. */
 export async function isMerged(run: Runner, n: number): Promise<boolean> {
-  return (await run(['gh', 'api', `repos/{owner}/{repo}/pulls/${n}`, '--jq', '.merged'])).trim() === 'true'
+  return (await out(run, ['gh', 'api', `repos/{owner}/{repo}/pulls/${n}`, '--jq', '.merged'])).trim() === 'true'
 }
