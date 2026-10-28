@@ -487,6 +487,35 @@ test('an unchanged second refresh makes the same calls, each conditional on its 
   expect(await rows()).toEqual(drawn)
 })
 
+test('a refresh that would draw what the pane shows writes no state; a new fact or a drawn age that moved writes it', async ($, on) => {
+  // #50's claim turns a day old, and stale, a minute from now.
+  const { clock, fixture } = host(on, { issues: [...BACKLOG, issue(50, ['ready-for-agent'], assigned('ann', 24 - 0.5 / 60))] })
+  const writes: unknown[] = []
+  on('state.set', { plugin: 'gh-pane', key: 'snapshot' }, async ($, e, next) => {
+    writes.push(e.value)
+    return next(e)
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(writes).toHaveLength(1)
+
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(1)
+
+  fixture.issues = fixture.issues.map(raw => (raw.number === 29 ? { ...raw, title: 'renamed' } : raw))
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(2)
+
+  expect(await ui.find({ key: 'release-50' })).toBeUndefined()
+  await clock.advance(60_000)
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(3)
+  expect(await ui.find({ key: 'release-50' })).toBeDefined()
+})
+
 test('a failed check-runs read fails the refresh, as any failed read does', async ($, on) => {
   host(on, { checksFail: 'gh: HTTP 502: Bad Gateway' })
   await open($)

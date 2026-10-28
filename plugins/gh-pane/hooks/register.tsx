@@ -64,6 +64,19 @@ const age = (now: string, then: string) => {
   return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
 }
 
+// What a snapshot draws: every fact but the read's time, which moves on every read, and in its place the ages it draws,
+// which move with that time alone. A claim's run line counts whenever the pane could draw it, stale or not.
+const drawnOf = (view: Snapshot) =>
+  JSON.stringify(
+    'error' in view
+      ? view
+      : {
+          ...view,
+          fetchedAt: undefined,
+          ages: view.issues.map(issue => [age(view.fetchedAt, issue.updatedAt), runLine({ ...issue, now: view.fetchedAt, hasPr: false })?.text]),
+        },
+  )
+
 const runnerOf = ($: EngineInterface): Runner => argv =>
   $.process.run(argv).catch((error: unknown) => {
     throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
@@ -89,6 +102,8 @@ async function land($: EngineInterface, config: Config): Promise<Snapshot> {
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
+  // An idle pane is left alone: a read that draws what the landed one draws writes nothing, so nothing redraws.
+  if (kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)) return next
   kept = { cwd, view: next }
   await update($, snapshot, () => next)
   return next
