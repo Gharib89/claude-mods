@@ -4,8 +4,8 @@ The standards every change in this repo is reviewed against. The `code-review` s
 
 ## Enforced by tooling
 
-- Prettier 3.9.9 formats Markdown, with default options, per `.pre-commit-config.yaml`.
-- markdownlint-cli2 0.23.3 lints Markdown, per `.markdownlint.jsonc` (extends `markdownlint/style/prettier`).
+- Prettier 3.9.10 formats Markdown, with default options, per `.pre-commit-config.yaml`.
+- markdownlint-cli2 0.24.0 lints Markdown, per `.markdownlint.jsonc` (extends `markdownlint/style/prettier`).
 
 Both run through prek on every edit (`scripts/check.sh edit`), at commit, and in `scripts/check.sh full`.
 

@@ -61,7 +61,7 @@ else
   mark secrets unavailable
 fi
 
-run deps  true                           # no stack with a lockfile yet: nothing to install
+run deps  true                           # check.sh full installs each DEPS_ROWS root itself
 if [ "$lane" = small ]; then
   # The one node: a mod folder runs its own suite (`plugin test` takes a
   # folder, never a file, on 2.1.288); any other node is a changed document,
