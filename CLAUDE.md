@@ -37,6 +37,8 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+`docs/wiki/index.md` is a supervising session's dated record of past batch runs, recurring stalls and the owner's stated preferences. Read it before supervising a batch. It is history: where it disagrees with the code or a rule, the code and the rule win.
+
 ### Ship
 
 `/ship` drives one issue to a merge-ready PR. This repo's ship profile: `docs/agents/ship.md`. Without that file ship refuses: run `/setup-skills`.

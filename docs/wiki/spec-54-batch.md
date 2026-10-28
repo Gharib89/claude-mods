@@ -18,7 +18,7 @@ A side fix, #59 (PR #60, `a1cad1c`), cleared a pre-existing zizmor `dangerous-tr
 - The classifier refused merges on #61 and #64: see [Merge classifier block](merge-classifier-block.md).
 - #63 and #64 stopped at a gate held on `cap`: see [Docs-only cap hold](docs-only-cap-hold.md).
 - ship-56's first review round caught a real bug (a full last page carries no `Link: next`, so a 304 would hide later pages).
-- ship-57 claimed all five theme colours render on 2.1.288 when its probe showed three. A later probe found all six keys rendering on 2.1.288 and 2.1.312. Since then a probe-backed claim names what was seen per build.
+- ship-57 claimed that every theme colour it used rendered on 2.1.288, though its probe had shown only three of them. A later probe of six theme keys found each rendering identically on 2.1.288 and 2.1.312. Since then a probe-backed claim names what was seen per build.
 - ship-57's slice brief paraphrased the parent's list, and a reviewer flagged the parent's own decision as an unlogged deviation. A brief that quotes the parent avoids this.
 - ship-57 filed Gharib89/skills#1031: `reply-thread` cannot edit a posted reply.
 
