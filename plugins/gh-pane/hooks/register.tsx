@@ -11,6 +11,10 @@ import { isMerged, readBacklog, type Runner } from './github'
 import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wrapped } from './rules'
 
 const PANE = 'gh-pane'
+// The dock's width asked for: the engine caps it, at 45% of the terminal's columns by the 2.1.312 types (2.1.288's say
+// only "floor to ceiling"), so a width no terminal reaches takes the cap. On 2.1.312 at 120 columns it docked 53 cells
+// wide, where it docked 49 without the ask.
+const WIDEST = 1000
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
 const gate = atom({ plugin: 'gh-pane', key: 'gate' } as const, null)
 
@@ -38,16 +42,24 @@ const configOf = (o: PluginOptions) => ({
 
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
 
+// HH:MM in the machine's time zone: an absolute time stays true with no timer to redraw it.
+const clockOf = (iso: string) => {
+  const at = new Date(iso)
+  return [at.getHours(), at.getMinutes()].map(n => String(n).padStart(2, '0')).join(':')
+}
+
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
 
 // One read at a time, however many triggers (a timer, a gh call, the command) arrive: one asked for during a read
-// waits for one more read, started once that read lands, which every later ask joins until it starts.
+// waits for one more read, started once that read lands, which every later ask joins until it starts. While one is in
+// flight the footer reads `reading…`, so each flip redraws the pane.
 let reading: Promise<Snapshot> | undefined
 let rereading: Promise<Snapshot> | undefined
-// The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
-// redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
-// that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
-// and draws only in the folder it was read in: one process may host more than one session.
+// The last snapshot landed, which the pane draws, its fetch time included; `$.state` holds a copy written only when what
+// it draws changes, because that write redraws the pane, and the pane falls back on it once the module reloads. A /clear
+// empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before that, so a read started there
+// lands in the old session (seen on 2.1.289). This module variable outlives the /clear, and draws only in the folder it
+// was read in: one process may host more than one session.
 let kept: { cwd: string; view: Snapshot } | null = null
 // Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
 // is one: it outlives the /clear the next button runs.
@@ -83,7 +95,11 @@ const runnerOf = ($: EngineInterface): Runner => argv =>
 // Answers a snapshot read after the call: the read in flight when it came may predate what the caller waits on.
 function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
   if (reading === undefined) {
-    reading = land($, config).finally(() => (reading = undefined))
+    reading = land($, config).finally(() => {
+      reading = undefined
+      $.ui.invalidate('ui.render')
+    })
+    $.ui.invalidate('ui.render')
     return reading
   }
   rereading ??= reading
@@ -100,9 +116,10 @@ async function land($: EngineInterface, config: Config): Promise<Snapshot> {
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  // An idle pane is left alone: a read that draws what the landed one draws writes nothing, so nothing redraws.
-  if (kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)) return next
+  // A read that draws what the landed one draws writes no state; the in-flight flag's redraw shows its time.
+  const isSame = kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)
   kept = { cwd, view: next }
+  if (isSame) return next
   await update($, snapshot, () => next)
   return next
 }
@@ -110,7 +127,7 @@ async function land($: EngineInterface, config: Config): Promise<Snapshot> {
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
 // `$.ui.panes()`, which no redraw follows (2.1.289), so show, hide and the ui.close hook each invalidate it.
 async function show($: EngineInterface, config: Config) {
-  const opened = await $.ui.open({ id: PANE, title: 'gh-pane' })
+  const opened = await $.ui.open({ id: PANE, title: 'gh-pane', columns: WIDEST })
   $.ui.invalidate('ui.render')
   await refresh($, config)
   return opened
@@ -331,6 +348,9 @@ export const register: Register = (on, options) => {
   })
 
   // One button above the prompt that shows or hides the pane; whatever another plugin draws there stays above it.
+  // Seen on 2.1.312: with the pane inline in an 80x40 terminal, this hook ran and drew the button but got maxRows 0, so
+  // none of it showed; it showed at 80x80, at 80x40 with the pane hidden, and at 120x40 with the pane docked. Its
+  // maxRows fell from 13 to 10 to 0 as the inline pane opened and filled: the engine's layout, not this hook, drops it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
@@ -371,7 +391,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
     // A snapshot an older version wrote (no `ci`) may still be in `$.state` once the mod reloads, and draws as none.
     const stored = await read($, snapshot)
-    const view = (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
+    const view = (kept?.cwd === (await $.session.cwd()) ? kept.view : null) ?? (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     // A failed read (a network blip) holds the pane until the next re-read, so retry starts one now.
@@ -396,6 +416,7 @@ export const register: Register = (on, options) => {
     )
     const lines = [...runs.values()].filter(line => line !== null)
     const stale = lines.filter(line => line.isStale).length
+    const running = lines.length - stale
     // Ready now: every row with a button that starts work, a ship or a map's next.
     const ready = view.issues.filter(issue => {
       const state = stateOf(issue, config, isMapTicket(issue))
@@ -412,6 +433,9 @@ export const register: Register = (on, options) => {
 
     if (!expansion.has(view.repo)) expansion.set(view.repo, { all: false, flipped: new Set() })
     const expanded = expansion.get(view.repo)!
+    // The lines the pane draws: the header, its controls and the footer, the hint while focused, and each part below as
+    // it is built.
+    let drawn = e.props.isFocused ? 4 : 3
     const toggle = (n: number) => {
       if (!expanded.flipped.delete(n)) expanded.flipped.add(n)
       $.ui.invalidate('ui.render')
@@ -419,16 +443,19 @@ export const register: Register = (on, options) => {
 
     // An expanded part, one Box per line, each opening on the rail. BoxProps have no per-side border on 2.1.288 or
     // 2.1.312, so no left rule can draw the rail down a wrapped Text: the lines are packed here instead.
-    const lined = (key: string, rail: string, lines: RenderChildren[]) => (
-      <Box key={key} flexDirection="column">
-        {lines.map((line, i) => (
-          <Box key={`${key}:${i}`} gap={1}>
-            <Text dimColor>{rail}</Text>
-            {line}
-          </Box>
-        ))}
-      </Box>
-    )
+    const lined = (key: string, rail: string, lines: RenderChildren[]) => {
+      drawn += lines.length
+      return (
+        <Box key={key} flexDirection="column">
+          {lines.map((line, i) => (
+            <Box key={`${key}:${i}`} gap={1}>
+              <Text dimColor>{rail}</Text>
+              {line}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
     const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
@@ -458,10 +485,10 @@ export const register: Register = (on, options) => {
         `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
         ...(issue.milestone ? [issue.milestone] : []),
       ]
-      // The row's buttons, each named by its label: what it fills in the prompt.
+      // The row's buttons, each named by its label: what it fills in the prompt. Starting work is the primary one.
       const buttons = [
-        state.isReady && { name: 'ship', fills: () => fill(config.shipCommand, { n: issue.number }) },
-        state.isNext && { name: 'next', fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
+        state.isReady && { name: 'ship', isPrimary: true, fills: () => fill(config.shipCommand, { n: issue.number }) },
+        state.isNext && { name: 'next', isPrimary: true, fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
         state.isDone && { name: 'close', fills: () => fill(config.closeRequest, { n: issue.number, total: issue.subs.total }) },
         has(issue, config.needsTriage) && { name: 'triage', fills: () => triage([issue.number]) },
       ].flatMap(button => button || [])
@@ -471,6 +498,7 @@ export const register: Register = (on, options) => {
         </Text>
       )
       const blockerLinks: { label: string; url?: string; sep: string }[] = issue.blockers.map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
+      drawn += run ? 2 : 1
       return [
         // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width
         // (seen on 2.1.312 at 120 and 60 columns, and on 2.1.288 at 120).
@@ -500,8 +528,8 @@ export const register: Register = (on, options) => {
             )}
             {isExpanded && issue.subs.total > 0 && <Text dimColor>{bar}</Text>}
             {tail !== undefined && tail !== '' && <Text color={color}>{tail}</Text>}
-            {buttons.map(({ name, fills }) => (
-              <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
+            {buttons.map(({ name, isPrimary, fills }) => (
+              <Button key={`${name}-${issue.number}`} variant={isPrimary ? 'primary' : undefined} label={name} onPress={() => propose($, fills())} />
             ))}
           </Box>
         </Box>,
@@ -525,7 +553,6 @@ export const register: Register = (on, options) => {
             {run.isStale && (
               <Button
                 key={`release-${issue.number}`}
-                plain
                 label="release"
                 onPress={() => propose($, fill(config.releaseRequest, { n: issue.number, user: issue.assignees.join(', ') }))}
               />
@@ -564,20 +591,68 @@ export const register: Register = (on, options) => {
     }
 
     // Each sub-issue below `issue`, at every depth.
-    const branch = (issue: Issue, indent: string): ReturnType<typeof row> => [
-      issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ${issue.subs.done} done`}</Text> : undefined,
-      ...issue.children.flatMap((n, i) => {
-        const isLast = i === issue.children.length - 1
-        const child = byNumber.get(n)!
-        return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
-      }),
-    ]
+    const branch = (issue: Issue, indent: string): ReturnType<typeof row> => {
+      if (issue.subs.done > 0) drawn += 1
+      return [
+        issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ${issue.subs.done} done`}</Text> : undefined,
+        ...issue.children.flatMap((n, i) => {
+          const isLast = i === issue.children.length - 1
+          const child = byNumber.get(n)!
+          return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
+        }),
+      ]
+    }
+
+    // Each tree opens on a gap line, and each waiting group on a gap and its heading.
+    const trees = roots.map(root => {
+      if (root.subs.total === 0) return row(root, '•')
+      drawn += 1
+      return (
+        <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
+          {row(root, '•')}
+          {branch(root, '  ')}
+        </Box>
+      )
+    })
+    const groups = waiting.map(({ name, issues, canTriage }) => {
+      if (issues.length === 0) return null
+      drawn += 2
+      return (
+        <Box key={name} flexDirection="column" marginTop={1}>
+          <Box gap={1}>
+            <Text bold color="gray">{`${name} (${issues.length})`}</Text>
+            {canTriage && issues.length > 1 && (
+              <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
+            )}
+          </Box>
+          {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├', true))}
+        </Box>
+      )
+    })
+    // Inline, the frame shows `bodyRows` of the tree: the header says how many lines wait below it.
+    const { offset, bodyRows } = e.props.scroll
+    const more = e.props.placement === 'inline' && offset === 0 ? drawn - bodyRows : 0
+    const headerColor = stale > 0 ? 'error' : isCapFull ? 'warning' : 'subtle'
 
     return (
       <Box flexDirection="column" width={room}>
-        <Text color={isCapFull ? 'yellow' : undefined} dimColor={!isCapFull}>
-          {`PR cap ${view.prs}/${config.prCap} · ready now: ${ready} · runs: ${lines.length - stale} active · ${stale} stale`}
-        </Text>
+        <Box key="header">
+          <Box flexShrink={1}>
+            <Text color={headerColor} wrap="truncate-end">
+              <Link href={`https://github.com/${view.repo}`} label={view.repo} />
+              {[
+                ` · ${ready} ready · ${view.prs}/${config.prCap} PRs`,
+                running > 0 ? ` · ${running} running` : '',
+                stale > 0 ? ` · ${stale} stale` : '',
+              ].join('')}
+            </Text>
+          </Box>
+          {more > 0 && (
+            <Box flexShrink={0}>
+              <Text color={headerColor}>{` · ↓ ${more} more`}</Text>
+            </Box>
+          )}
+        </Box>
         <Box gap={1}>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
           <Button
@@ -592,28 +667,15 @@ export const register: Register = (on, options) => {
             }}
           />
         </Box>
-        {roots.map(root =>
-          root.subs.total === 0 ? (
-            row(root, '•')
-          ) : (
-            <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
-              {row(root, '•')}
-              {branch(root, '  ')}
-            </Box>
-          ),
-        )}
-        {waiting.map(({ name, issues, canTriage }) =>
-          issues.length === 0 ? null : (
-            <Box key={name} flexDirection="column" marginTop={1}>
-              <Box gap={1}>
-                <Text bold color="gray">{`${name} (${issues.length})`}</Text>
-                {canTriage && issues.length > 1 && (
-                  <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
-                )}
-              </Box>
-              {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├', true))}
-            </Box>
-          ),
+        {trees}
+        {groups}
+        <Box key="footer">
+          <Text color="subtle">{reading === undefined ? `read at ${clockOf(view.fetchedAt)}` : 'reading…'}</Text>
+        </Box>
+        {e.props.isFocused && (
+          <Box key="hint">
+            <Text color="subtle">{`Tab moves · Enter presses · e ${expanded.all ? 'collapses' : 'expands'} all`}</Text>
+          </Box>
         )}
       </Box>
     )

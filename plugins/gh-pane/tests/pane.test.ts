@@ -204,9 +204,12 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   })
   const opened: string[] = []
   const closed: string[] = []
+  /** The docked width each open asked for. */
+  const widths: unknown[] = []
   on('ui.open', async (_$, e) => {
     if (openFails !== undefined) return { deny: openFails }
     opened.push(`${e.id} titled ${e.title}`)
+    widths.push(e.columns)
     panes.isOpen = true
     return { value: { isPlaced: true } }
   })
@@ -247,7 +250,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   })
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
-  return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
+  return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, widths, folder, fixture, pulls, sent, typed, ran }
 }
 
 type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find' | 'findAll'>
@@ -293,7 +296,7 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     filled.length = 0
     const ui = await $.ui.mount({ ...PANE, surface })
 
-    expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
+    expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale')
     // A tree's root reads `•`, as a lone row does: `▾` means expanded.
     expect((await spans(ui, 'row-20'))[0]).toEqual(['•', ''])
     // A parent labelled ready-for-human reads yours, not spec.
@@ -407,7 +410,7 @@ test('the pane follows a non-default userConfig', {
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await ui.find({ text: 'PR cap 0/5 · ready now: 2 · runs: 1 active · 1 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/5 PRs · 1 running · 1 stale')
   expect(await ui.find({ text: /◐ ship worktree 9/ })).toBeDefined()
   expect(await ui.find({ text: /needs triage \(1\)/ })).toBeDefined()
   expect(await ui.find({ text: /needs info \(1\)/ })).toBeDefined()
@@ -684,11 +687,12 @@ test('a collapsed title is whole, in a growing Box, and the engine truncates it 
   host(on, { issues: [issue(7, ['ready-for-human', 'bug'], { title: LONG })] })
   await open($)
   const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 49 }, surface: 'terminal' })
-  const [title] = (await ui.findAll({ type: 'Text' })).filter(text => text.props.wrap === 'truncate-end')
-  expect(title?.props.children ?? textOf(title)).toBe(LONG)
   const holder = (await ui.findAll({ type: 'Box' })).find(box => box.props.flexGrow === 1)
   expect(holder).toBeDefined()
   expect(textOf(holder)).toBe(LONG)
+  // The header's line truncates too, so the title is the one in the growing Box.
+  const title = (holder as unknown as Drawn).children?.[0] as Drawn
+  expect([title.type, title.props.wrap]).toEqual(['Text', 'truncate-end'])
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
@@ -707,7 +711,7 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   // Ready now counts the next rows: #7 and #11.
-  expect(await ui.find({ text: 'PR cap 0/3 · ready now: 2 · runs: 3 active · 0 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · 3 running')
   expect(await ui.find({ text: /untriaged/ })).toBeUndefined()
   expect(await tail(ui, 9)).toEqual(['by #6', 'warning'])
   // A map ticket resolves by a closing comment, not a PR: an old claim is not stale.
@@ -717,6 +721,7 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   // Waiting on its reporter, a map ticket is not next.
   expect(await ui.find({ text: 'needs-info' })).toBeDefined()
   expect(await ui.find({ key: 'next-8' })).toBeUndefined()
+  expect((await ui.find({ key: 'next-7' }))?.props).toEqual(expect.objectContaining({ variant: 'primary' }))
   await ui.press({ key: 'next-7' })
   await ui.press({ key: 'next-11' })
   expect(filled).toEqual(['/wayfinder 4 7', '/wayfinder 4 11'])
@@ -903,9 +908,111 @@ for (const [name, setup, line] of [
     await open($)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     expect(await ui.find({ text: line })).toBeDefined()
-    expect(await ui.find({ text: /PR cap/ })).toBeUndefined()
+    expect(await ui.find({ key: 'header' })).toBeUndefined()
   })
 }
+
+test('the header links the repo and counts ready rows and PRs, with running and stale runs only when nonzero', async ($, on) => {
+  const { fixture, clock } = host(on)
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // A stale claim reads error, whatever the cap.
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale', 'error']])
+  expect((await ui.find({ type: 'Link', text: 'acme/widgets' }))?.props.href).toBe('https://github.com/acme/widgets')
+
+  fixture.issues = [issue(29, ['ready-for-human'])]
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 0 ready · 0/3 PRs', 'subtle']])
+})
+
+test('a full PR cap with no stale claim reads warning', { options: { prCap: 1 } }, async ($, on) => {
+  host(on, { issues: [issue(36, ['ready-for-agent']), issue(37, ['ready-for-agent'], assigned('ann', 2)), { ...issue(31, []), pull_request: {}, body: 'Closes #36' }] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 0 ready · 1/1 PRs · 1 running', 'warning']])
+})
+
+test('the footer reads the time of the last read, and reading… while one is in flight', async ($, on) => {
+  const { clock, backlog } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // HH:MM in the machine's own time zone, which `toTimeString` opens with.
+  const readAt = (ms: number) => `read at ${new Date(ms).toTimeString().slice(0, 5)}`
+  expect(await spans(ui, 'footer')).toEqual([[readAt(NOW), 'subtle']])
+
+  let release = () => {}
+  backlog.held.until = new Promise(resolve => (release = resolve))
+  await clock.advance(5 * 60_000)
+  await $.tool.call({ tool: 'Bash', command: 'gh issue list' })
+  await clock.settle()
+  expect(await spans(ui, 'footer')).toEqual([['reading…', 'subtle']])
+
+  // A read that draws nothing new still moves the time.
+  release()
+  await clock.settle()
+  expect(await spans(ui, 'footer')).toEqual([[readAt(NOW + 5 * 60_000), 'subtle']])
+})
+
+test('row actions are framed buttons, ship the primary one; the row toggle and the header controls stay plain', async ($, on) => {
+  host(on, { issues: [...BACKLOG, issue(50, ['needs-info'], { sub_issues_summary: { total: 1, completed: 1 } })] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const look = async (key: string) => {
+    const { plain, variant } = (await ui.find({ key }))?.props ?? {}
+    return [key, plain, variant]
+  }
+  expect(await look('ship-27')).toEqual(['ship-27', undefined, 'primary'])
+  for (const key of ['triage-32', 'close-50', 'release-19']) expect(await look(key)).toEqual([key, undefined, undefined])
+  for (const key of ['toggle-27', 'refresh', 'expand']) expect(await look(key)).toEqual([key, true, undefined])
+})
+
+test('the key hint draws only while the pane holds the keyboard, and names what e does now', async ($, on) => {
+  host(on)
+  await open($)
+  for (const isFocused of [true, false]) {
+    const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
+    expect([isFocused, await spans(ui, 'hint')]).toEqual([isFocused, isFocused ? [['Tab moves · Enter presses · e expands all', 'subtle']] : []])
+    if (isFocused) {
+      await ui.press({ key: 'expand' })
+      expect(await spans(ui, 'hint')).toEqual([['Tab moves · Enter presses · e collapses all', 'subtle']])
+      await ui.press({ key: 'expand' })
+    }
+    await ui.unmount()
+  }
+})
+
+test('inline, the header counts the lines below the window, expanded titles at their wrapped height', async ($, on) => {
+  // Drawn: header, controls, #7, the tree's gap, #27, #29, the waiting group's gap and heading, #32, footer, hint: 11.
+  host(on, { issues: [issue(7, ['ready-for-agent'], { title: LONG }), issue(27, ['ready-for-agent'], { sub_issues_summary: { total: 1, completed: 0 } }), issue(29, []), issue(32, ['needs-triage'])] })
+  await open($)
+  const inline = { ...PANE.props, placement: 'inline', bodyColumns: 40, scroll: { offset: 0, bodyRows: 5 } } as const
+  const ui = await $.ui.mount({ ...PANE, props: inline, surface: 'terminal' })
+  // The count is a Text of its own beside the one the edge truncates, so a narrow pane cuts the counts before it.
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 2 ready · 0/3 PRs', 'subtle'], [' · ↓ 6 more', 'subtle']])
+  // Expanded at 40 columns, #7's title takes 3 lines and its facts 1.
+  await ui.press({ key: 'toggle-7' })
+  expect((await spans(ui, 'header'))[1]?.[0]).toBe(' · ↓ 10 more')
+  await ui.unmount()
+
+  for (const props of [{ ...inline, scroll: { offset: 0, bodyRows: 15 } }, { ...inline, scroll: { offset: 3, bodyRows: 5 } }, { ...inline, placement: 'dock' as const }]) {
+    const other = await $.ui.mount({ ...PANE, props, surface: 'terminal' })
+    expect(await spans(other, 'header')).toEqual([['acme/widgets · 2 ready · 0/3 PRs', 'subtle']])
+    await other.unmount()
+  }
+})
+
+test('the pane asks for the widest dock, from the command and the band alike', async ($, on) => {
+  const { widths, panes } = host(on)
+  await open($)
+  panes.isOpen = false
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'toggle' })
+  // The engine caps the dock at 45% of the terminal: at least that of the 200 columns /gh-pane ran in.
+  expect(widths).toHaveLength(2)
+  for (const columns of widths) expect([columns, Number.isInteger(columns) && (columns as number) >= 90]).toEqual([columns, true])
+})
 
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
   const { calls, clock, backlog } = host(on)
@@ -919,7 +1026,7 @@ test('a failed read offers retry, and the header offers refresh; each re-reads n
   await ui.press({ key: 'retry' })
   await clock.settle()
   expect(reads()).toBe(2)
-  expect(await ui.find({ text: /PR cap/ })).toBeDefined()
+  expect(await ui.find({ key: 'header' })).toBeDefined()
 
   await ui.press({ key: 'refresh' })
   await clock.settle()
@@ -1119,13 +1226,13 @@ test('after a /clear empties the session state, the open pane still draws the la
   session.isCleared = true
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: /Reading the repo/ })).toBeUndefined()
-  expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 1 ready · 1/3 PRs · 2 running · 2 stale')
   await ui.unmount()
   // A session in another folder never draws this one's read.
   folder.cwd = '/w/other'
   const other = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await other.find({ text: /Reading the repo/ })).toBeDefined()
-  expect(await other.find({ text: /PR cap/ })).toBeUndefined()
+  expect(await other.find({ key: 'header' })).toBeUndefined()
 })
 
 const GATE = 'Ready to merge. Reply "merge" to squash-merge, close the issue, and clean up.\nPR: https://github.com/acme/widgets/pull/42'
