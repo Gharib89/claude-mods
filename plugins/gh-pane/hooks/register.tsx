@@ -38,16 +38,24 @@ const configOf = (o: PluginOptions) => ({
 
 const cut = (text: string, room: number) => (text.length <= room ? text : `${text.slice(0, Math.max(1, room - 1))}…`)
 
+// HH:MM in the machine's time zone: an absolute time stays true with no timer to redraw it.
+const clockOf = (iso: string) => {
+  const at = new Date(iso)
+  return [at.getHours(), at.getMinutes()].map(n => String(n).padStart(2, '0')).join(':')
+}
+
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
 
 // One read at a time, however many triggers (a timer, a gh call, the command) arrive: one asked for during a read
-// waits for one more read, started once that read lands, which every later ask joins until it starts.
+// waits for one more read, started once that read lands, which every later ask joins until it starts. While one is in
+// flight the footer reads `reading…`, so each flip redraws the pane.
 let reading: Promise<Snapshot> | undefined
 let rereading: Promise<Snapshot> | undefined
-// The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
-// redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
-// that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
-// and draws only in the folder it was read in: one process may host more than one session.
+// The last snapshot landed, which the pane draws, its fetch time included; `$.state` holds a copy written only when what
+// it draws changes, because that write redraws the pane, and the pane falls back on it once the module reloads. A /clear
+// empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before that, so a read started there
+// lands in the old session (seen on 2.1.289). This module variable outlives the /clear, and draws only in the folder it
+// was read in: one process may host more than one session.
 let kept: { cwd: string; view: Snapshot } | null = null
 // Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
 // is one: it outlives the /clear the next button runs.
@@ -83,7 +91,11 @@ const runnerOf = ($: EngineInterface): Runner => argv =>
 // Answers a snapshot read after the call: the read in flight when it came may predate what the caller waits on.
 function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
   if (reading === undefined) {
-    reading = land($, config).finally(() => (reading = undefined))
+    reading = land($, config).finally(() => {
+      reading = undefined
+      $.ui.invalidate('ui.render')
+    })
+    $.ui.invalidate('ui.render')
     return reading
   }
   rereading ??= reading
@@ -100,9 +112,10 @@ async function land($: EngineInterface, config: Config): Promise<Snapshot> {
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  // An idle pane is left alone: a read that draws what the landed one draws writes nothing, so nothing redraws.
-  if (kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)) return next
+  // A read that draws what the landed one draws writes no state; the in-flight flag's redraw shows its time.
+  const isSame = kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)
   kept = { cwd, view: next }
+  if (isSame) return next
   await update($, snapshot, () => next)
   return next
 }
@@ -371,7 +384,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button, Link }: E = $.ui.resolve(e)
     // A snapshot an older version wrote (no `ci`) may still be in `$.state` once the mod reloads, and draws as none.
     const stored = await read($, snapshot)
-    const view = (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored) ?? (kept?.cwd === (await $.session.cwd()) ? kept.view : null)
+    const view = (kept?.cwd === (await $.session.cwd()) ? kept.view : null) ?? (stored !== null && !('error' in stored) && !('ci' in stored) ? null : stored)
     const room = e.props.bodyColumns
     if (view === null) return <Text dimColor>Reading the repo over gh api…</Text>
     // A failed read (a network blip) holds the pane until the next re-read, so retry starts one now.
@@ -623,6 +636,9 @@ export const register: Register = (on, options) => {
             </Box>
           ),
         )}
+        <Box key="footer">
+          <Text color="subtle">{reading === undefined ? `read at ${clockOf(view.fetchedAt)}` : 'reading…'}</Text>
+        </Box>
       </Box>
     )
   })

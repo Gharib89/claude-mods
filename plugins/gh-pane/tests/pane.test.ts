@@ -929,6 +929,28 @@ test('a full PR cap with no stale claim reads warning', { options: { prCap: 1 } 
   expect(await spans(ui, 'header')).toEqual([['acme/widgets · 0 ready · 1/1 PRs · 1 running', 'warning']])
 })
 
+test('the footer reads the time of the last read, and reading… while one is in flight', async ($, on) => {
+  const { clock, backlog } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // HH:MM in the machine's own time zone, which `toTimeString` opens with.
+  const readAt = (ms: number) => `read at ${new Date(ms).toTimeString().slice(0, 5)}`
+  expect(await spans(ui, 'footer')).toEqual([[readAt(NOW), 'subtle']])
+
+  let release = () => {}
+  backlog.held.until = new Promise(resolve => (release = resolve))
+  await clock.advance(5 * 60_000)
+  await $.tool.call({ tool: 'Bash', command: 'gh issue list' })
+  await clock.settle()
+  expect(await spans(ui, 'footer')).toEqual([['reading…', 'subtle']])
+
+  // A read that draws nothing new still moves the time.
+  release()
+  await clock.settle()
+  expect(await spans(ui, 'footer')).toEqual([[readAt(NOW + 5 * 60_000), 'subtle']])
+})
+
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
   const { calls, clock, backlog } = host(on)
   backlog.failsAt = 1
