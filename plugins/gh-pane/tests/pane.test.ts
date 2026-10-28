@@ -144,7 +144,8 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   const clock = mock.clock(on, { now: NOW })
   const panes = { isOpen: false, isBroken: false }
   const toasts: string[] = []
-  const backlog = { reads: 0, failsAt: 0 }
+  // `held.until`: what each read of the issues list's first page waits on before it answers.
+  const backlog = { reads: 0, failsAt: 0, held: { until: Promise.resolve() } }
   /** The calls answered 304 Not Modified. */
   const unchanged: string[][] = []
   on('process.run', async (_$, e, next) => {
@@ -181,6 +182,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
     const base = path.split(/[?&]page=/)[0]!
     if (base === 'repos/acme/widgets/issues?state=open&per_page=100') {
       if (base === path && ++backlog.reads === backlog.failsAt) return fail('gh: HTTP 401: Bad credentials\n')
+      if (base === path) await backlog.held.until
       return answer(page(path, fixture.issues, perPage, etag))
     }
     const runs = /commits\/refs\/pull\/(\d+)\/head\/check-runs/.exec(path)
@@ -746,6 +748,26 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await clock.settle()
   expect(reads()).toBe(7)
+})
+
+test('three triggers during one read cause exactly one rerun, once that read lands', async ($, on) => {
+  const { calls, clock, backlog } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  await open($)
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
+  expect(reads()).toBe(1)
+
+  let release = () => {}
+  backlog.held.until = new Promise(resolve => (release = resolve))
+  await $.tool.call({ tool: 'Bash', command: 'gh issue list' })
+  await clock.settle()
+  expect(reads()).toBe(2)
+  for (const command of ['gh pr view 1', 'git push', 'gh issue view 2']) await $.tool.call({ tool: 'Bash', command })
+  await clock.settle()
+  expect(reads()).toBe(2)
+  release()
+  await clock.settle()
+  expect(reads()).toBe(3)
 })
 
 test('a timer tick or a re-read that fails says so in a toast', async ($, on) => {

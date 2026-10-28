@@ -40,8 +40,10 @@ const cut = (text: string, room: number) => (text.length <= room ? text : `${tex
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
 
-// Reads overlap (a timer, a gh call, the command): only the latest one started may land.
-let reads = 0
+// One read at a time, however many triggers (a timer, a gh call, the command) arrive: one asked for during a read
+// waits for one more read, started once that read lands, which every later ask joins until it starts.
+let reading: Promise<Snapshot> | undefined
+let rereading: Promise<Snapshot> | undefined
 // The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
 // redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
 // that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
@@ -67,14 +69,26 @@ const runnerOf = ($: EngineInterface): Runner => argv =>
     throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
   })
 
-// Answers the snapshot it read, landed or not: a read overtaken by a newer one is still fresh for its caller.
-async function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
-  const ticket = ++reads
+// Answers a snapshot read after the call: the read in flight when it came may predate what the caller waits on.
+function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
+  if (reading === undefined) {
+    reading = land($, config).finally(() => (reading = undefined))
+    return reading
+  }
+  rereading ??= reading
+    .catch(() => undefined)
+    .then(() => {
+      rereading = undefined
+      return refresh($, config)
+    })
+  return rereading
+}
+
+async function land($: EngineInterface, config: Config): Promise<Snapshot> {
   const cwd = await $.session.cwd()
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  if (ticket !== reads) return next
   kept = { cwd, view: next }
   await update($, snapshot, () => next)
   return next
