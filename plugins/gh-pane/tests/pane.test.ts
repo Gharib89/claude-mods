@@ -1150,6 +1150,18 @@ for (const [name, options, request] of [
   })
 }
 
+test('a finished sub-issue list is never read: its children could match no open issue', async ($, on) => {
+  const { calls } = host(on, {
+    issues: [
+      issue(3, [], { sub_issues_summary: { total: 2, completed: 2 } }),
+      issue(5, [], { sub_issues_summary: { total: 2, completed: 1 } }),
+    ],
+  })
+  await open($)
+  const read = calls.flatMap(argv => argv.filter(arg => arg.includes('/sub_issues')))
+  expect(read).toEqual(['repos/{owner}/{repo}/issues/5/sub_issues?per_page=100'])
+})
+
 test('all done ranks after in PR and before blocked, claimed and ready', async ($, on) => {
   host(on, {
     issues: [

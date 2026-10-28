@@ -101,7 +101,8 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   const ci: Record<number, CiState> = {}
   await inTurn([
     ...issues.flatMap((issue, i) => [
-      issue.subs.total > 0 && (() =>
+      // A finished list: its children are closed, so none could match an open issue.
+      issue.subs.total > issue.subs.done && (() =>
         list(run, `repos/{owner}/{repo}/issues/${issue.number}/sub_issues?per_page=100`).then(subs => {
           const children = subs.flatMap(s => byUrl.get(s.html_url) ?? [])
           issue.children = children.map(child => child.number)
