@@ -386,8 +386,8 @@ export const register: Register = (on, options) => {
     if (view.issues.length === 0 && view.prs === 0) return <Text dimColor>{`Nothing open in ${view.repo}.`}</Text>
 
     const { byNumber, mapOf, isMapTicket, roots, waiting } = arrange(view, config)
-    const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
-      <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
+    const ref = (n: number) => (
+      <Link href={byNumber.get(n)?.url || `https://github.com/${view.repo}/issues/${n}`} label={`#${n}`} />
     )
     const runs = new Map(
       view.issues
@@ -444,7 +444,7 @@ export const register: Register = (on, options) => {
       // The short tail: what the glyph alone leaves unsaid. A waiting group's heading already names its rows' state.
       const tail: RenderChildren =
         state.pr !== undefined
-          ? ['PR ', ref(state.pr, 'pull')]
+          ? ['PR ', <Link key="pr" href={`https://github.com/${view.repo}/pull/${state.pr}`} label={`#${state.pr}`} />]
           : state.blockers?.length === 1
             ? ['by ', <Link key="by" href={state.blockers[0]!.url} label={state.blockers[0]!.label} />]
             : state.blockers
