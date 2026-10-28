@@ -14,22 +14,49 @@ check in the merge summary.
 Admission by label is `ready-for-agent` always and `ready-for-human` in an
 attended run only; anything else is `not triaged`. An assignee, your own
 identity included, is `already claimed`: stale-claim recovery is a human
-unassigning by hand. `existing PR` is a live PR whose body **closes** this issue
-or whose head branch ends in `-<issue>`.
+unassigning by hand. A [rework run](rework.md) is the exception: it needs your
+own claim and an open PR, and isolates on that PR's branch. `existing PR` is a
+live PR whose body **closes** this issue or whose head branch ends in
+`-<issue>`.
 
 ## The worktree
 
 Attended, `isolate <issue> <type> <slug>` fetches, branches
-`<type>/<slug>-<issue>` from `origin/HEAD`, creates the sibling worktree
-`<parent>/<repo>.worktrees/<slug>-<issue>`, copies the profile's `Carry:` files
-in one way, and prints the path. Unattended,
-`isolate ... --in-place` does the same fetch and branch in the sandbox clone,
-which is already isolation: no worktree, no carry.
+`<type>/<slug>-<issue>` from `origin/HEAD`, creates the worktree
+`<main checkout>/.claude/worktrees/<slug>-<issue>`, lists `.claude/worktrees/`
+once in the repo's shared exclude file (`<git common dir>/info/exclude`, so the
+consumer commits nothing and the main checkout's `git status` stays clean),
+copies the profile's `Carry:` files in one way, and prints the path. For a
+`<slug>` already ending in `-<issue>`, `isolate` drops that suffix so the number
+appears once; `--rework` keeps the slug as given, since it names the PR's own
+branch. Unattended, `isolate ... --in-place` does the same fetch and branch in
+the sandbox clone, which is already isolation: no worktree, no carry.
 
-Isolation is `isolate`'s call alone, rather than `EnterWorktree` or a bare `git
-worktree add`: it is what lands the worktree at the path and branch preflight
-checks. Work from the printed path, every edit under it absolute, because an
-absolute main-checkout path silently edits the wrong tree.
+Creating the worktree is `isolate`'s call alone, rather than `EnterWorktree` or
+a bare `git worktree add`: it is what lands the worktree at the path and branch
+preflight checks. Work from the printed path, every edit under it absolute,
+because an absolute main-checkout path silently edits the wrong tree.
+
+## Entering the worktree
+
+Attended, the session then enters the path `isolate` printed with
+`EnterWorktree` (`path` set to it), before any edit and before any `LSP` call.
+Measured on Claude Code 2.1.296: Claude Code starts a language server at the
+first `LSP` call or the first edit of a file it serves (a read does not start
+it), roots it at the session's directory at that moment, and never moves it: a
+session left at the main checkout gets every `LSP` answer and diagnostic from
+the main checkout's code, and a Bash `cd` changes nothing. Under
+`.claude/worktrees/` the switch raises no permission prompt, which is why
+`isolate` creates the worktree there; anywhere else it prompts every time. A
+session that edited a served file before
+`/ship` keeps its server where it started.
+
+Through any stop or hand-back the session stays in the worktree, so the human
+picks up there. At the merge gate it leaves with `ExitWorktree`
+(`action: "keep"`) before `cleanup` removes the folder. `CLAUDE_PROJECT_DIR`
+stays the main checkout, so hooks keep running the main checkout's scripts; the
+mechanics resolve the main checkout and the Run file through the git common
+directory, from either place.
 
 ## The ship profile
 

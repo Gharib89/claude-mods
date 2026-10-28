@@ -7,6 +7,78 @@ released version. See
 
 <!-- version list -->
 
+## v0.13.0 (2026-10-20)
+
+### Features
+
+- **setup-harness**: {paths} hands a turn row its deleted paths
+  ([#914](https://github.com/Gharib89/skills/pull/914),
+  [`d33dd8f`](https://github.com/Gharib89/skills/commit/d33dd8f198f3c2d44a9cdc01b944bdbf8abc2c9e))
+
+
+## v0.12.3 (2026-10-19)
+
+### Bug Fixes
+
+- **harness**: Turn rung runs the tests naming a deleted .sh
+  ([#886](https://github.com/Gharib89/skills/pull/886),
+  [`63e8b4f`](https://github.com/Gharib89/skills/commit/63e8b4f151f8586ff7718370567632d07cab21ec))
+
+
+## v0.12.2 (2026-10-15)
+
+### Bug Fixes
+
+- **setup-harness**: Check.sh skips installed skills with no Excluded: line
+  ([#714](https://github.com/Gharib89/skills/pull/714),
+  [`ce88761`](https://github.com/Gharib89/skills/commit/ce88761915cb75acbea9ab5aba691140cf39468e))
+
+
+## v0.12.1 (2026-10-14)
+
+### Bug Fixes
+
+- **setup-harness**: Check-hook stays quiet in a repo with no check.sh
+  ([#634](https://github.com/Gharib89/skills/pull/634),
+  [`211da1d`](https://github.com/Gharib89/skills/commit/211da1de1feda0e8da921800a45c1a3c054120de))
+
+
+## v0.12.0 (2026-10-11)
+
+### Features
+
+- **setup-harness**: Check.sh installs a root's missing dependencies first
+  ([#588](https://github.com/Gharib89/skills/pull/588),
+  [`5a71eaf`](https://github.com/Gharib89/skills/commit/5a71eaf52af31eafe656c93d91919d57ae328417))
+
+
+## v0.11.1 (2026-10-11)
+
+### Bug Fixes
+
+- **setup-harness**: Pyright finds the main checkout's .venv from a worktree
+  ([#587](https://github.com/Gharib89/skills/pull/587),
+  [`26136b0`](https://github.com/Gharib89/skills/commit/26136b0a725b96d72939faf026e5b20d2a50acb4))
+
+
+## v0.11.0 (2026-10-11)
+
+### Features
+
+- **setup-harness**: The CLAUDE.md harness block says when to use and distrust LSP
+  ([#583](https://github.com/Gharib89/skills/pull/583),
+  [`dbffccb`](https://github.com/Gharib89/skills/commit/dbffccb734a00414ee252a8bc37302c7e525c560))
+
+
+## v0.10.5 (2026-10-11)
+
+### Bug Fixes
+
+- **setup-harness**: Fetch a cloud proof sha the clone lacks before calling it unproven
+  ([#580](https://github.com/Gharib89/skills/pull/580),
+  [`2988fcf`](https://github.com/Gharib89/skills/commit/2988fcf1081b3a66767b9b7aec4675e911b11dba))
+
+
 ## v0.10.4 (2026-10-11)
 
 ### Bug Fixes

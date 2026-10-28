@@ -3,7 +3,7 @@ name: grill-with-artifact
 description: "Grill a plan or design on a private artifact page: each grilling round arrives as question cards the human answers and Submits, and the glossary and ADRs are written as answers settle. Use when the human asks for grilling on a page or an artifact, or names grill-with-artifact, a wayfinder ticket's Notes included."
 argument-hint: "[topic]"
 metadata:
-  version: 0.4.1
+  version: 0.4.3
 ---
 
 # grill-with-artifact
@@ -11,7 +11,7 @@ metadata:
 Grilling, with a page as the surface. Call the Skill tool twice, for `grilling`
 and `domain-modeling`: they own the design tree, the frontier, "facts are your
 job" and every glossary and ADR write. With either one not installed, print
-these for the human, at the commits this skill was tested against, and stop:
+these for the human and stop:
 
 ```sh
 npx skills add mattpocock/skills#49dd158d1076134a641b33efb035946536778336 --skill grilling --agent claude-code -y
@@ -22,18 +22,12 @@ This skill replaces only two things in them: how a
 **grilling round** is shown (a round document on the page, never the terminal
 format `grilling` gives) and how the answers come back (a Submit on the page).
 
-The page is [page.html](page.html), fixed and tested: a session fills its title
-and publishes it once. From then on every grilling round is a document in the
-page's database, and the page renders it live. [round-data.md](round-data.md)
-is the contract between the two: read it before writing round 1, and hold every
-document you write to its field table and its figure style contract.
-
-This skill is derived from `grill-with-docs` in `mattpocock/skills`, and
-installs with:
-
-```sh
-npx skills add Gharib89/skills --skill grill-with-artifact --agent claude-code -y
-```
+The page is [page.html](page.html) with its style and script siblings, fixed
+and tested: a session fills its title and publishes it once. From then on
+every grilling round is a document in the page's database, and the page renders
+it live. [round-data.md](round-data.md) is the contract between the two: read
+it before writing round 1, and hold every document you write to its field
+table and its figure style contract.
 
 ## 1 · Pick the surface
 
@@ -49,15 +43,15 @@ terminal format runs.
 ## 2 · Publish the page
 
 1. Take the topic from the invocation; only when none was given, ask the human
-   for one in a few words. It names the page in their artifact gallery, so it
-   tells this session apart from every other.
-2. Copy `page.html` into your scratchpad as `grill-<topic-slug>/page.html` and
-   replace its one `{{TOPIC}}` with the topic, HTML-escaped (`&`, `<`, `>`,
-   `"`).
-3. Publish that file as a new artifact: `capabilities`
-   `{"db": {}, "user": {}, "comments": {}}`, `icon` `question`, and a one
-   sentence `description` naming what is being grilled. Each session gets its
-   own artifact. Refused: print step 1's line and fall back.
+   for one in a few words.
+2. Copy `page.html` and its siblings (`page.css`, `page-core.js`,
+   `page-boot.js`) into your scratchpad as `grill-<topic-slug>/` and replace
+   the one `{{TOPIC}}` in `page.html` only with the topic, HTML-escaped (`&`,
+   `<`, `>`, `"`).
+3. Publish `page.html` as a new artifact, the siblings in `files`:
+   `capabilities` `{"db": {}, "user": {}, "comments": {}}`, `icon` `question`,
+   and a one sentence `description` naming what is being grilled. Each session
+   gets its own artifact. Refused: print step 1's line and fall back.
 4. Read the publish result's subscription line. The Submit wake reaches you
    only while the artifact's watch shows auto-replies armed; when the line
    leaves that in doubt, check with `ArtifactComments` `watch` and no `url`.
@@ -69,16 +63,14 @@ the session.
 
 ## 3 · Post a grilling round
 
-1. Compute the frontier as `grilling` says. Every question gets two to four
-   options, a `recommended` option and a `why`.
+1. Compute the frontier as `grilling` says.
 2. Draw the design tree as `treeSvg`: every decision as a node in its state
    (`n-settled`, `n-open`, `n-blocked`, `n-deferred`), each open node carrying
    `data-q` for its question, and `hot` on the edge or node with the most riding
    on it, named in `treeCaption`.
 3. Give a question a `figureSvg` only where a mechanism or a comparison is
    faster seen than read. The first time one earns a figure, load
-   `artifact-diagramming` (bundled with Claude Code's artifact tools) through
-   the Skill tool, and draw it with the figure
+   `artifact-diagramming` through the Skill tool, and draw it with the figure
    style contract's classes, which win over any colours that skill suggests.
    With `artifact-diagramming` not installed, the round goes out with no
    figures and stays on the page.
@@ -90,7 +82,7 @@ the session.
 6. Resolve the Submit thread that started this turn, if one did, so an open
    thread always means still working. Then print one status line,
    `Round <n> posted. Questions: <k>.`, and end the turn. The questions and
-   what settled them live on the page only, so the human reads one copy.
+   what settled them live on the page only.
 
 **Done when:** `rounds/<n>` is written, the turn's Submit thread is resolved,
 and the status line is the turn's only text.
