@@ -7,18 +7,64 @@ export type RunLine = { text: string; isStale: boolean }
 /**
  * The line under a claimed issue, first match wins: a claim older than a day with no PR closing it is stale, unless
  * the issue closes without a PR (`expectsPr: false`); a matching ship worktree names the run; with neither and no PR,
- * the claim's age. A claim with a PR and no worktree has no line, since its row already says `in PR #N`.
+ * the claim's age. A claim with a PR and no worktree has no line, since its row already says `PR #N`.
  */
 export function runLine(run: { claimedAt?: string; now: string; hasPr: boolean; expectsPr?: boolean; worktree?: string }): RunLine | null {
   const hours = run.claimedAt === undefined ? undefined : (Date.parse(run.now) - Date.parse(run.claimedAt)) / 3_600_000
-  const age = hours === undefined ? '' : hours < 24 ? ` ${Math.floor(hours)}h ago` : ` ${Math.floor(hours / 24)}d ago`
+  const age = run.claimedAt === undefined ? '' : ` ${ageOf(run.now, run.claimedAt)}`
   const expectsPr = run.expectsPr ?? true
   if (expectsPr && !run.hasPr && hours !== undefined && hours > STALE_HOURS) {
-    return { text: `✗ stale claim: claimed${age}, no PR`, isStale: true }
+    return { text: `! stale claim: claimed${age}, no PR`, isStale: true }
   }
   if (run.worktree !== undefined) return { text: `◐ ship worktree ${run.worktree}`, isStale: false }
   if (run.hasPr) return null
   return { text: `◐ claimed${age}${expectsPr ? ', no PR yet' : ''}`, isStale: false }
+}
+
+/** How long ago `then` was at `now`, in the one wording the pane draws: `just now` under an hour, `Nh ago`, `Nd ago`. */
+export function ageOf(now: string, then: string): string {
+  const hours = (Date.parse(now) - Date.parse(then)) / 3_600_000
+  return hours < 1 ? 'just now' : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
+}
+
+/** `items` in lines of at most `room` cells, one cell between items; an item wider than `room` takes a line alone. */
+export function pack<T>(items: T[], room: number, width: (item: T) => number): T[][] {
+  const lines: T[][] = []
+  let used = 0
+  for (const item of items) {
+    const line = lines.at(-1)
+    if (line !== undefined && used + 1 + width(item) <= room) {
+      line.push(item)
+      used += 1 + width(item)
+    } else {
+      lines.push([item])
+      used = width(item)
+    }
+  }
+  return lines
+}
+
+// East Asian wide and fullwidth blocks, and the emoji a terminal draws wide by default.
+const WIDE = /[\p{Emoji_Presentation}ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{1b000}-\u{1b2ff}\u{20000}-\u{3fffd}]/u
+
+/** Terminal cells `text` draws in: two for a wide character or an emoji, one for any other. */
+export function cellsOf(text: string): number {
+  let cells = 0
+  for (const char of text) cells += WIDE.test(char) ? 2 : 1
+  return cells
+}
+
+/** `text` in lines of at most `width` cells, split at spaces; a word wider than `width` breaks across lines. */
+export function wrapped(text: string, width: number): string[] {
+  const pieces = text.split(' ').filter(Boolean).flatMap(word => {
+    const parts = ['']
+    for (const char of word) {
+      if (parts.at(-1) !== '' && cellsOf(parts.at(-1)! + char) > width) parts.push('')
+      parts[parts.length - 1] += char
+    }
+    return parts
+  })
+  return pack(pieces, width, cellsOf).map(line => line.join(' '))
 }
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

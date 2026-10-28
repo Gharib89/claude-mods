@@ -4,11 +4,11 @@
 // reply, and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
-import type { Elements, EngineInterface, PluginOptions, Register, Timer } from 'claude-code'
+import type { Elements, EngineInterface, PluginOptions, Register, RenderChildren, Timer } from 'claude-code'
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
-import { commandOf, fill, gatePr, mergedPrOf, runLine } from './rules'
+import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wrapped } from './rules'
 
 const PANE = 'gh-pane'
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
@@ -62,11 +62,6 @@ const inkOn = (hex: string) => {
   return (0.299 * r! + 0.587 * g! + 0.114 * b!) / 255 > 0.6 ? '#000000' : '#ffffff'
 }
 
-const age = (now: string, then: string) => {
-  const hours = (Date.parse(now) - Date.parse(then)) / 3_600_000
-  return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
-}
-
 // What a snapshot draws: every fact but the read's time, which moves on every read, and in its place the ages it draws,
 // which move with that time alone. A claim's run line counts whenever the pane could draw it, stale or not.
 const drawnOf = (view: Snapshot) =>
@@ -76,7 +71,7 @@ const drawnOf = (view: Snapshot) =>
       : {
           ...view,
           fetchedAt: undefined,
-          ages: view.issues.map(issue => [age(view.fetchedAt, issue.updatedAt), runLine({ ...issue, now: view.fetchedAt, hasPr: false })?.text]),
+          ages: view.issues.map(issue => [ageOf(view.fetchedAt, issue.updatedAt), runLine({ ...issue, now: view.fetchedAt, hasPr: false })?.text]),
         },
   )
 
@@ -147,26 +142,55 @@ async function propose($: EngineInterface, text: string) {
   $.ui.toast(`In the prompt: ${text}  (Enter sends it)`)
 }
 
+// One glyph per state, each meaning one thing anywhere in the pane, the run line included; `●` is a label dot. The
+// colours are theme keys, which the theme follows. All six drew in the theme's colour on 2.1.288 and 2.1.312 alike, where
+// a name outside the theme draws uncoloured (a probe pane, 256-colour codes: success 114, error 211, warning 220, subtle
+// 239, suggestion 153, merged 147). 2.1.288 types a colour as any string, 2.1.312 lists each key in ThemeKey.
+const GLYPHS = {
+  ready: ['▶', 'success'],
+  pass: ['✓', 'success'],
+  fail: ['✗', 'error'],
+  running: ['◌', 'warning'],
+  pr: ['○', 'subtle'],
+  done: ['◆', 'success'],
+  blocked: ['⊘', 'warning'],
+  claimed: ['◐', 'suggestion'],
+  stale: ['!', 'error'],
+  yours: ['◇', 'merged'],
+  quiet: ['·', 'subtle'],
+} as const
+
+/** `word`: what the row's short tail says, where a PR or blockers do not; `isWaiting`: waiting on triage or info. */
+type State = {
+  glyph: keyof typeof GLYPHS
+  word?: string
+  pr?: number
+  blockers?: Issue['blockers']
+  isReady?: true
+  isNext?: true
+  isDone?: true
+  isWaiting?: true
+}
+
 /**
  * A row's state, first match wins. An issue whose sub-issues are all closed waits only on its own close. A map ticket
- * (a sub-issue of a map) left open, unblocked, unclaimed and waiting on neither triage nor info is next.
+ * (a sub-issue of a map) left open, unblocked, unclaimed and waiting on neither triage nor info is next. An issue with
+ * open sub-issues and no state label is a spec, whose work lives in its sub-issues.
  */
-function stateOf(
-  issue: Issue,
-  config: Config,
-  isMapTicket: boolean,
-): { tag: string; color: string; pr?: number; blockers?: Issue['blockers']; isReady?: true; isNext?: true; isDone?: true } {
-  if (issue.pr !== undefined) return { tag: 'in PR ', color: 'cyan', pr: issue.pr }
-  if (issue.subs.total > 0 && issue.subs.done === issue.subs.total) return { tag: 'all done', color: 'green', isDone: true }
-  if (issue.blockers.length > 0) return { tag: 'blocked by ', color: 'yellow', blockers: issue.blockers }
-  if (issue.assignees.length > 0) return { tag: `claimed (${issue.assignees.join(', ')})`, color: 'blue' }
-  if (issue.labels.includes(config.readyForAgent)) return { tag: 'ready now', color: 'green', isReady: true }
-  if (issue.labels.includes(config.readyForHuman)) return { tag: 'yours', color: 'magenta' }
+function stateOf(issue: Issue, config: Config, isMapTicket: boolean): State {
+  const count = `${issue.subs.done}/${issue.subs.total}`
+  if (issue.pr !== undefined) return { glyph: 'pr', pr: issue.pr }
+  if (issue.subs.total > 0 && issue.subs.done === issue.subs.total) return { glyph: 'done', word: count, isDone: true }
+  if (issue.blockers.length > 0) return { glyph: 'blocked', blockers: issue.blockers }
+  if (issue.assignees.length > 0) return { glyph: 'claimed', word: issue.assignees.join(', ') }
+  if (issue.labels.includes(config.readyForAgent)) return { glyph: 'ready', isReady: true }
+  if (issue.labels.includes(config.readyForHuman)) return { glyph: 'yours', word: 'yours' }
   const waiting = issue.labels.find(l => l === config.needsTriage || l === config.needsInfo)
-  if (waiting !== undefined) return { tag: waiting, color: 'gray' }
-  if (issue.labels.includes(config.mapLabel)) return { tag: 'map', color: 'gray' }
-  if (isMapTicket) return { tag: 'ready now', color: 'green', isNext: true }
-  return { tag: 'untriaged', color: 'gray' }
+  if (waiting !== undefined) return { glyph: 'quiet', word: waiting, isWaiting: true }
+  if (issue.labels.includes(config.mapLabel)) return { glyph: 'quiet', word: 'map' }
+  if (isMapTicket) return { glyph: 'ready', isNext: true }
+  if (issue.subs.total > 0) return { glyph: 'quiet', word: `spec ${count}` }
+  return { glyph: 'quiet', word: 'untriaged' }
 }
 
 type Open = Exclude<Snapshot, { error: string }>
@@ -362,11 +386,9 @@ export const register: Register = (on, options) => {
     if (view.issues.length === 0 && view.prs === 0) return <Text dimColor>{`Nothing open in ${view.repo}.`}</Text>
 
     const { byNumber, mapOf, isMapTicket, roots, waiting } = arrange(view, config)
-    const ref = (n: number, kind: 'issues' | 'pull' = 'issues') => (
-      <Link href={(kind === 'issues' && byNumber.get(n)?.url) || `https://github.com/${view.repo}/${kind}/${n}`} label={`#${n}`} />
+    const ref = (n: number) => (
+      <Link href={byNumber.get(n)?.url || `https://github.com/${view.repo}/issues/${n}`} label={`#${n}`} />
     )
-    const blockers = (list: Issue['blockers']) =>
-      list.flatMap(({ label, url }, i) => [...(i === 0 ? [] : [', ']), <Link key={label} href={url} label={label} />])
     const runs = new Map(
       view.issues
         .filter(issue => issue.assignees.length > 0)
@@ -384,10 +406,9 @@ export const register: Register = (on, options) => {
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
-    // The labels a row shows: all but the state labels its tag already says.
+    // The labels a row shows: all but the state labels its glyph and tail already say.
     const stateLabels = [config.needsTriage, config.needsInfo, config.readyForAgent, config.readyForHuman, config.mapLabel]
     const colorOf = (issue: Issue, label: string) => `#${issue.labelColors[label] || 'ededed'}`
-    const ciMark = { pass: ['✓', 'green'], fail: ['✗', 'red'], running: ['●', 'yellow'] } as const
 
     if (!expansion.has(view.repo)) expansion.set(view.repo, { all: false, flipped: new Set() })
     const expanded = expansion.get(view.repo)!
@@ -396,18 +417,44 @@ export const register: Register = (on, options) => {
       $.ui.invalidate('ui.render')
     }
 
-    const row = (issue: Issue, prefix: string) => {
+    // An expanded part, one Box per line, each opening on the rail. BoxProps have no per-side border on 2.1.288 or
+    // 2.1.312, so no left rule can draw the rail down a wrapped Text: the lines are packed here instead.
+    const lined = (key: string, rail: string, lines: RenderChildren[]) => (
+      <Box key={key} flexDirection="column">
+        {lines.map((line, i) => (
+          <Box key={`${key}:${i}`} gap={1}>
+            <Text dimColor>{rail}</Text>
+            {line}
+          </Box>
+        ))}
+      </Box>
+    )
+    const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
-      const ci = state.pr === undefined ? undefined : view.ci[state.pr]
       const isExpanded = expanded.all !== expanded.flipped.has(issue.number)
       const bar = '█'.repeat(Math.round((issue.subs.done / Math.max(1, issue.subs.total)) * 8)).padEnd(8, '░')
       const run = runs.get(issue.number)
       const pad = `${prefix.replace('├', '│').replace(/[└•]/, ' ')}  ↳`
       const indent = pad.replace('↳', ' ')
+      // The room an expanded line leaves after the rail and its gap.
+      const width = Math.max(8, room - indent.length - 1)
+      const glyph = state.pr !== undefined ? (view.ci[state.pr] ?? 'pr') : state.glyph === 'claimed' && run?.isStale ? 'stale' : state.glyph
+      const [mark, color] = GLYPHS[glyph]
+      // The short tail: what the glyph alone leaves unsaid. A waiting group's heading already names its rows' state.
+      const tail: RenderChildren =
+        state.pr !== undefined
+          ? ['PR ', <Link key="pr" href={`https://github.com/${view.repo}/pull/${state.pr}`} label={`#${state.pr}`} />]
+          : state.blockers?.length === 1
+            ? ['by ', <Link key="by" href={state.blockers[0]!.url} label={state.blockers[0]!.label} />]
+            : state.blockers
+              ? `by ${state.blockers.length}`
+              : inWaitingGroup && state.isWaiting
+                ? undefined
+                : state.word
       const facts = [
-        ...(issue.assignees.length > 0 && !state.tag.startsWith('claimed') ? [issue.assignees.join(', ')] : []),
-        `updated ${age(view.fetchedAt, issue.updatedAt)}`,
+        ...(issue.assignees.length > 0 && state.glyph !== 'claimed' ? [issue.assignees.join(', ')] : []),
+        `updated ${ageOf(view.fetchedAt, issue.updatedAt)}`,
         `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
         ...(issue.milestone ? [issue.milestone] : []),
       ]
@@ -418,62 +465,61 @@ export const register: Register = (on, options) => {
         state.isDone && { name: 'close', fills: () => fill(config.closeRequest, { n: issue.number, total: issue.subs.total }) },
         has(issue, config.needsTriage) && { name: 'triage', fills: () => triage([issue.number]) },
       ].flatMap(button => button || [])
-      // What follows a collapsed title, measured, each part with its one-column gap: the dots, the count, the tag, the
-      // CI mark and the buttons.
-      const tail = [
-        labels.length,
-        issue.subs.total > 0 ? `${issue.subs.done}/${issue.subs.total}`.length : 0,
-        `${state.tag}${state.pr === undefined ? '' : `#${state.pr}`}${(state.blockers ?? []).map(b => b.label).join(', ')}`.length,
-        ci ? 1 : 0,
-        ...buttons.map(button => button.name.length),
-      ].reduce((sum, width) => sum + (width > 0 ? width + 1 : 0), 0)
-      // The prefix, the toggle and `#N `, each with its gap, and one spare column.
-      const titleRoom = Math.max(8, room - prefix.length - 3 - `#${issue.number} `.length - tail - 1)
+      const chip = (label: string) => (
+        <Text key={`chip-${issue.number}-${label}`} backgroundColor={colorOf(issue, label)} color={inkOn(colorOf(issue, label))}>
+          {` ${label} `}
+        </Text>
+      )
+      const blockerLinks: { label: string; url?: string; sep: string }[] = issue.blockers.map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
       return [
+        // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width
+        // (seen on 2.1.312 at 120 and 60 columns, and on 2.1.288 at 120).
         <Box key={`row-${issue.number}`} gap={1}>
-          <Text dimColor>{prefix}</Text>
-          <Button key={`toggle-${issue.number}`} plain label={isExpanded ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
-          <Text bold={state.isReady === true}>
-            {ref(issue.number)}
-            {isExpanded ? '' : ` ${cut(issue.title, titleRoom)}`}
-          </Text>
-          {!isExpanded && labels.length > 0 && (
-            <Text>
-              {labels.map(label => (
-                <Text key={`dot-${issue.number}-${label}`} color={colorOf(issue, label)}>
-                  ●
-                </Text>
-              ))}
-            </Text>
-          )}
-          {issue.subs.total > 0 && <Text dimColor>{`${isExpanded ? `${bar} ` : ''}${issue.subs.done}/${issue.subs.total}`}</Text>}
-          <Text color={state.color}>
-            {state.tag}
-            {state.pr !== undefined ? ref(state.pr, 'pull') : ''}
-            {state.blockers ? blockers(state.blockers) : ''}
-          </Text>
-          {ci && <Text color={ciMark[ci][1]}>{ciMark[ci][0]}</Text>}
-          {buttons.map(({ name, fills }) => (
-            <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
-          ))}
-        </Box>,
-        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
-        isExpanded && (
-          <Box key={`title-${issue.number}`} gap={1}>
-            <Box flexShrink={0}>
-              <Text dimColor>{indent}</Text>
-            </Box>
-            <Box flexShrink={1}>
-              <Text bold={state.isReady === true} wrap="wrap">
+          <Box flexShrink={0} gap={1}>
+            <Text dimColor>{prefix}</Text>
+            <Text color={color}>{mark}</Text>
+            <Button key={`toggle-${issue.number}`} plain label={isExpanded ? '▾' : '▸'} onPress={() => toggle(issue.number)} />
+            <Text bold={state.isReady === true}>{ref(issue.number)}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1}>
+            {!isExpanded && (
+              <Text bold={state.isReady === true} wrap="truncate-end">
                 {issue.title}
               </Text>
-            </Box>
+            )}
           </Box>
-        ),
+          <Box flexShrink={0} gap={1}>
+            {!isExpanded && labels.length > 0 && (
+              <Text>
+                {labels.map(label => (
+                  <Text key={`dot-${issue.number}-${label}`} color={colorOf(issue, label)}>
+                    ●
+                  </Text>
+                ))}
+              </Text>
+            )}
+            {isExpanded && issue.subs.total > 0 && <Text dimColor>{bar}</Text>}
+            {tail !== undefined && tail !== '' && <Text color={color}>{tail}</Text>}
+            {buttons.map(({ name, fills }) => (
+              <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
+            ))}
+          </Box>
+        </Box>,
+        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix, glyph and tail too (2.1.296).
+        isExpanded &&
+          lined(
+            `title-${issue.number}`,
+            indent,
+            wrapped(issue.title, width).map(line => (
+              <Text bold={state.isReady === true} wrap="truncate-end">
+                {line}
+              </Text>
+            )),
+          ),
         run && (
           <Box key={`run-${issue.number}`} gap={1}>
             <Text dimColor>{pad}</Text>
-            <Text color={run.isStale ? 'red' : 'cyan'} bold={run.isStale}>
+            <Text color={run.isStale ? GLYPHS.stale[1] : GLYPHS.claimed[1]} bold={run.isStale}>
               {cut(run.text, Math.max(12, room - pad.length - 12))}
             </Text>
             {run.isStale && (
@@ -486,32 +532,40 @@ export const register: Register = (on, options) => {
             )}
           </Box>
         ),
-        isExpanded && labels.length > 0 && (
-          <Box key={`chips-${issue.number}`} gap={1}>
-            <Box flexShrink={0}>
-              <Text dimColor>{indent}</Text>
-            </Box>
-            <Box flexShrink={1} gap={1} flexWrap="wrap">
-              {labels.map(label => (
-                <Text key={`chip-${issue.number}-${label}`} backgroundColor={colorOf(issue, label)} color={inkOn(colorOf(issue, label))}>
-                  {` ${label} `}
-                </Text>
-              ))}
-            </Box>
-          </Box>
-        ),
-        isExpanded && (
-          <Box key={`facts-${issue.number}`} gap={1}>
-            <Text dimColor>{indent}</Text>
-            <Text dimColor>{facts.join(' · ')}</Text>
-          </Box>
-        ),
+        isExpanded &&
+          blockerLinks.length > 0 &&
+          lined(
+            `blocked-${issue.number}`,
+            indent,
+            pack([{ label: 'blocked by', sep: '' }, ...blockerLinks], width, link => cellsOf(link.label + link.sep)).map(line => (
+              <Text color={GLYPHS.blocked[1]}>
+                {line.flatMap(({ label, url, sep }, i) => [
+                  ...(i === 0 ? [] : [' ']),
+                  url === undefined ? label : <Link key={label} href={url} label={label} />,
+                  sep,
+                ])}
+              </Text>
+            )),
+          ),
+        isExpanded &&
+          labels.length > 0 &&
+          lined(
+            `chips-${issue.number}`,
+            indent,
+            pack(labels, width, label => cellsOf(label) + 2).map(line => <Box gap={1}>{line.map(chip)}</Box>),
+          ),
+        isExpanded &&
+          lined(
+            `facts-${issue.number}`,
+            indent,
+            wrapped(facts.join(' · '), width).map(line => <Text dimColor>{line}</Text>),
+          ),
       ]
     }
 
     // Each sub-issue below `issue`, at every depth.
     const branch = (issue: Issue, indent: string): ReturnType<typeof row> => [
-      issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ✓ ${issue.subs.done} done`}</Text> : undefined,
+      issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ${issue.subs.done} done`}</Text> : undefined,
       ...issue.children.flatMap((n, i) => {
         const isLast = i === issue.children.length - 1
         const child = byNumber.get(n)!
@@ -557,7 +611,7 @@ export const register: Register = (on, options) => {
                   <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
                 )}
               </Box>
-              {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├'))}
+              {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├', true))}
             </Box>
           ),
         )}
