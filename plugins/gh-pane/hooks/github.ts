@@ -9,9 +9,10 @@ export type Runner = (argv: string[]) => Promise<string>
 
 type Raw = Record<string, any>
 
-// Every path read here answers a list, or for check runs one object per page; --slurp wraps each page in an outer array.
-const list = async (run: Runner, path: string): Promise<Raw[]> =>
-  (JSON.parse(await run(['gh', 'api', '--paginate', '--slurp', path])) as (Raw | Raw[])[]).flat()
+// `--jq` runs `items` on every page and prints one JSON value per line; `--slurp` would do the same in one array, but
+// needs gh 2.48+. Every path read here answers a list, except check runs: one object per page, its runs in `.check_runs`.
+const list = async (run: Runner, path: string, items = '.[]'): Promise<Raw[]> =>
+  (await run(['gh', 'api', '--paginate', path, '--jq', items])).split('\n').filter(line => line !== '').map(line => JSON.parse(line))
 
 /** Runs `tasks` at most 8 at a time: GitHub's secondary rate limit refuses many concurrent requests. */
 async function inTurn(tasks: (() => Promise<void>)[]) {
@@ -79,7 +80,7 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   const ci: Record<number, CiState> = {}
   await inTurn(
     [...new Set(issues.flatMap(issue => issue.pr ?? []))].map(n => async () => {
-      const runs = (await list(run, `repos/${repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`)).flatMap(page => page.check_runs)
+      const runs = await list(run, `repos/${repo}/commits/refs/pull/${n}/head/check-runs?per_page=100`, '.check_runs[]')
       if (runs.length === 0) return
       ci[n] = runs.some(r => r.status !== 'completed')
         ? 'running'

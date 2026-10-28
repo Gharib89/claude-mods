@@ -98,6 +98,19 @@ type Host = {
   /** Each PR's check runs; a PR left out has none. */
   ci?: Record<number, ReturnType<typeof checks>>
   checksFail?: string
+  /** How many items one page of a list read holds; every list and check-runs read spans pages of this size. */
+  perPage?: number
+}
+
+/** What `gh api --paginate <path> --jq <filter>` prints: the filter's output on every page, one JSON value per line. */
+function paged(items: unknown[], perPage: number, filter: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
+  const pages = Array.from({ length: Math.max(1, Math.ceil(items.length / perPage)) }, (_, i) => toPage(items.slice(i * perPage, (i + 1) * perPage)))
+  const pick: Record<string, (page: any) => unknown[]> = {
+    '.[]': page => (Array.isArray(page) ? page : Object.values(page)),
+    '.check_runs[]': page => page.check_runs,
+  }
+  if (filter === undefined || !Object.hasOwn(pick, filter)) throw new Error(`the fake gh knows no --jq ${filter}`)
+  return pages.flatMap(pick[filter]!).map(value => `${JSON.stringify(value)}\n`).join('')
 }
 
 /**
@@ -105,7 +118,7 @@ type Host = {
  * `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent` and `ran` are the prompts and
  * the commands the mod submitted or ran, `typed` the prompts a person typed.
  */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail, perPage = 100 }: Host = {}) {
   const calls: string[][] = []
   const fixture = { issues }
   const pulls: Record<number, boolean> = {}
@@ -126,6 +139,8 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
     // Nothing beneath answers, so $.process.run rejects as it does for a command that cannot start.
     if (ghMissing) return next(e)
     if (ghFails !== undefined) return fail(`${ghFails}\nmore detail\n`)
+    // gh 2.46's own words: --slurp came in gh 2.48.
+    if (rest.includes('--slurp')) return fail('unknown flag: --slurp\n\nUsage:  gh api <endpoint> [flags]\n')
     if (rest[0] === 'repos/{owner}/{repo}') {
       if (++repo.reads === repo.failsAt) return fail('gh: HTTP 401: Bad credentials\n')
       // gh's own words when no remote of the checkout is on a GitHub host.
@@ -135,16 +150,21 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
     }
     const pull = /^repos\/\{owner\}\/\{repo\}\/pulls\/(\d+)$/.exec(rest[0] ?? '')
     if (pull) return pullFails === undefined ? ok(`${pulls[Number(pull[1])] ?? false}\n`) : fail(pullFails)
-    const path = rest.at(-1)!
+    const path = rest.find(arg => arg.startsWith('repos/'))!
+    const filter = rest[rest.indexOf('--jq') + 1]
     const events = /issues\/(\d+)\/events/.exec(path)
     if (events) {
       const hours = fixture.issues.find(i => i.number === Number(events[1]))?.claimedHoursAgo as number
-      return ok(JSON.stringify([[{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }]]))
+      return ok(paged([{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }], perPage, filter))
     }
-    if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(JSON.stringify([fixture.issues]))
+    if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(paged(fixture.issues, perPage, filter))
     const runs = /commits\/refs\/pull\/(\d+)\/head\/check-runs/.exec(path)
-    if (runs) return checksFail === undefined ? ok(JSON.stringify([ci[Number(runs[1])] ?? checks()])) : fail(`${checksFail}\n`)
-    return ok(JSON.stringify([API[path] ?? []]))
+    if (runs) {
+      if (checksFail !== undefined) return fail(`${checksFail}\n`)
+      const all = (ci[Number(runs[1])] ?? checks()).check_runs
+      return ok(paged(all, perPage, filter, chunk => ({ total_count: all.length, check_runs: chunk })))
+    }
+    return ok(paged(API[path] ?? [], perPage, filter))
   })
   const opened: string[] = []
   const closed: string[] = []
@@ -376,7 +396,7 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
   expect(await mark(5)).toEqual(['●', 'yellow'])
   expect(await mark(6)).toBeUndefined()
   // One REST read per PR that closes an open issue, by the PR's head ref; none for #54.
-  const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv.at(-1))
+  const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv[3])
   expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
 })
 
@@ -605,7 +625,7 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   // Registered immediate, so typed mid-turn it opens or hides the pane at once.
   expect(commands).toEqual([expect.objectContaining({ name: 'gh-pane', immediate: true })])
   await open($)
-  const reads = () => calls.filter(argv => argv.at(-1) === 'repos/acme/widgets/issues?state=open&per_page=100').length
+  const reads = () => calls.filter(argv => argv[3] === 'repos/acme/widgets/issues?state=open&per_page=100').length
   expect(reads()).toBe(1)
 
   await $.tool.call({ tool: 'Bash', command: 'ls -la' })
