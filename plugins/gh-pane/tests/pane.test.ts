@@ -204,9 +204,12 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   })
   const opened: string[] = []
   const closed: string[] = []
+  /** The docked width each open asked for. */
+  const widths: unknown[] = []
   on('ui.open', async (_$, e) => {
     if (openFails !== undefined) return { deny: openFails }
     opened.push(`${e.id} titled ${e.title}`)
+    widths.push(e.columns)
     panes.isOpen = true
     return { value: { isPlaced: true } }
   })
@@ -247,7 +250,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   })
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
-  return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
+  return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, widths, folder, fixture, pulls, sent, typed, ran }
 }
 
 type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find' | 'findAll'>
@@ -963,6 +966,46 @@ test('row actions are framed buttons, ship the primary one; the row toggle and t
   expect(await look('ship-27')).toEqual(['ship-27', undefined, 'primary'])
   for (const key of ['triage-32', 'close-50', 'release-19']) expect(await look(key)).toEqual([key, undefined, undefined])
   for (const key of ['toggle-27', 'refresh', 'expand']) expect(await look(key)).toEqual([key, true, undefined])
+})
+
+test('the key hint closes the pane only while it holds the keyboard', async ($, on) => {
+  host(on)
+  await open($)
+  for (const isFocused of [true, false]) {
+    const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
+    expect([isFocused, await spans(ui, 'hint')]).toEqual([isFocused, isFocused ? [['Tab moves · Enter presses · e expands all', 'subtle']] : []])
+    await ui.unmount()
+  }
+})
+
+test('inline, the header counts the lines below the window, expanded titles at their wrapped height', async ($, on) => {
+  // Drawn: header, controls, #7, the tree's gap, #27, #29, the waiting group's gap and heading, #32, footer, hint: 11.
+  host(on, { issues: [issue(7, ['ready-for-agent'], { title: LONG }), issue(27, ['ready-for-agent'], { sub_issues_summary: { total: 1, completed: 0 } }), issue(29, []), issue(32, ['needs-triage'])] })
+  await open($)
+  const inline = { ...PANE.props, placement: 'inline', bodyColumns: 40, scroll: { offset: 0, bodyRows: 5 } } as const
+  const ui = await $.ui.mount({ ...PANE, props: inline, surface: 'terminal' })
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · ↓ 6 more')
+  // Expanded at 40 columns, #7's title takes 3 lines and its facts 1.
+  await ui.press({ key: 'toggle-7' })
+  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · ↓ 10 more')
+  await ui.unmount()
+
+  for (const props of [{ ...inline, scroll: { offset: 0, bodyRows: 15 } }, { ...inline, scroll: { offset: 3, bodyRows: 5 } }, { ...inline, placement: 'dock' as const }]) {
+    const other = await $.ui.mount({ ...PANE, props, surface: 'terminal' })
+    expect((await spans(other, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs')
+    await other.unmount()
+  }
+})
+
+test('the pane asks for the widest dock, from the command and the band alike', async ($, on) => {
+  const { widths, panes } = host(on)
+  await open($)
+  panes.isOpen = false
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await band.press({ key: 'toggle' })
+  // The engine caps the dock at 45% of the terminal: at least that of the 200 columns /gh-pane ran in.
+  expect(widths).toHaveLength(2)
+  for (const columns of widths) expect([columns, Number.isInteger(columns) && (columns as number) >= 90]).toEqual([columns, true])
 })
 
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {

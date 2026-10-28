@@ -11,6 +11,9 @@ import { isMerged, readBacklog, type Runner } from './github'
 import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wrapped } from './rules'
 
 const PANE = 'gh-pane'
+// The dock's width asked for: the engine caps it at 45% of the terminal's columns (the 2.1.312 types), so a width no
+// terminal reaches takes that cap.
+const WIDEST = 1000
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
 const gate = atom({ plugin: 'gh-pane', key: 'gate' } as const, null)
 
@@ -123,7 +126,7 @@ async function land($: EngineInterface, config: Config): Promise<Snapshot> {
 // Opened by the person (the command, the band's button), the pane is placed at any width. The band draws from
 // `$.ui.panes()`, which no redraw follows (2.1.289), so show, hide and the ui.close hook each invalidate it.
 async function show($: EngineInterface, config: Config) {
-  const opened = await $.ui.open({ id: PANE, title: 'gh-pane' })
+  const opened = await $.ui.open({ id: PANE, title: 'gh-pane', columns: WIDEST })
   $.ui.invalidate('ui.render')
   await refresh($, config)
   return opened
@@ -426,6 +429,9 @@ export const register: Register = (on, options) => {
 
     if (!expansion.has(view.repo)) expansion.set(view.repo, { all: false, flipped: new Set() })
     const expanded = expansion.get(view.repo)!
+    // The lines the pane draws: the header, its controls and the footer, the hint while focused, and each part below as
+    // it is built.
+    let drawn = e.props.isFocused ? 4 : 3
     const toggle = (n: number) => {
       if (!expanded.flipped.delete(n)) expanded.flipped.add(n)
       $.ui.invalidate('ui.render')
@@ -433,16 +439,19 @@ export const register: Register = (on, options) => {
 
     // An expanded part, one Box per line, each opening on the rail. BoxProps have no per-side border on 2.1.288 or
     // 2.1.312, so no left rule can draw the rail down a wrapped Text: the lines are packed here instead.
-    const lined = (key: string, rail: string, lines: RenderChildren[]) => (
-      <Box key={key} flexDirection="column">
-        {lines.map((line, i) => (
-          <Box key={`${key}:${i}`} gap={1}>
-            <Text dimColor>{rail}</Text>
-            {line}
-          </Box>
-        ))}
-      </Box>
-    )
+    const lined = (key: string, rail: string, lines: RenderChildren[]) => {
+      drawn += lines.length
+      return (
+        <Box key={key} flexDirection="column">
+          {lines.map((line, i) => (
+            <Box key={`${key}:${i}`} gap={1}>
+              <Text dimColor>{rail}</Text>
+              {line}
+            </Box>
+          ))}
+        </Box>
+      )
+    }
     const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
@@ -485,6 +494,7 @@ export const register: Register = (on, options) => {
         </Text>
       )
       const blockerLinks: { label: string; url?: string; sep: string }[] = issue.blockers.map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
+      drawn += run ? 2 : 1
       return [
         // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width
         // (seen on 2.1.312 at 120 and 60 columns, and on 2.1.288 at 120).
@@ -577,14 +587,47 @@ export const register: Register = (on, options) => {
     }
 
     // Each sub-issue below `issue`, at every depth.
-    const branch = (issue: Issue, indent: string): ReturnType<typeof row> => [
-      issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ${issue.subs.done} done`}</Text> : undefined,
-      ...issue.children.flatMap((n, i) => {
-        const isLast = i === issue.children.length - 1
-        const child = byNumber.get(n)!
-        return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
-      }),
-    ]
+    const branch = (issue: Issue, indent: string): ReturnType<typeof row> => {
+      if (issue.subs.done > 0) drawn += 1
+      return [
+        issue.subs.done > 0 ? <Text key={`done-${issue.number}`} dimColor>{`${indent}├ ${issue.subs.done} done`}</Text> : undefined,
+        ...issue.children.flatMap((n, i) => {
+          const isLast = i === issue.children.length - 1
+          const child = byNumber.get(n)!
+          return [...row(child, `${indent}${isLast ? '└' : '├'}`), ...branch(child, `${indent}${isLast ? ' ' : '│'} `)]
+        }),
+      ]
+    }
+
+    // Each tree opens on a gap line, and each waiting group on a gap and its heading.
+    const trees = roots.map(root => {
+      if (root.subs.total === 0) return row(root, '•')
+      drawn += 1
+      return (
+        <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
+          {row(root, '•')}
+          {branch(root, '  ')}
+        </Box>
+      )
+    })
+    const groups = waiting.map(({ name, issues, canTriage }) => {
+      if (issues.length === 0) return null
+      drawn += 2
+      return (
+        <Box key={name} flexDirection="column" marginTop={1}>
+          <Box gap={1}>
+            <Text bold color="gray">{`${name} (${issues.length})`}</Text>
+            {canTriage && issues.length > 1 && (
+              <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
+            )}
+          </Box>
+          {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├', true))}
+        </Box>
+      )
+    })
+    // Inline, the frame shows `bodyRows` of the tree: the header says how many lines wait below it.
+    const { offset, bodyRows } = e.props.scroll
+    const more = e.props.placement === 'inline' && offset === 0 ? drawn - bodyRows : 0
 
     return (
       <Box flexDirection="column" width={room}>
@@ -595,6 +638,7 @@ export const register: Register = (on, options) => {
               ` · ${ready} ready · ${view.prs}/${config.prCap} PRs`,
               running > 0 ? ` · ${running} running` : '',
               stale > 0 ? ` · ${stale} stale` : '',
+              more > 0 ? ` · ↓ ${more} more` : '',
             ].join('')}
           </Text>
         </Box>
@@ -612,32 +656,16 @@ export const register: Register = (on, options) => {
             }}
           />
         </Box>
-        {roots.map(root =>
-          root.subs.total === 0 ? (
-            row(root, '•')
-          ) : (
-            <Box key={`tree-${root.number}`} flexDirection="column" marginTop={1}>
-              {row(root, '•')}
-              {branch(root, '  ')}
-            </Box>
-          ),
-        )}
-        {waiting.map(({ name, issues, canTriage }) =>
-          issues.length === 0 ? null : (
-            <Box key={name} flexDirection="column" marginTop={1}>
-              <Box gap={1}>
-                <Text bold color="gray">{`${name} (${issues.length})`}</Text>
-                {canTriage && issues.length > 1 && (
-                  <Button key="triage-all" plain label="triage all" onPress={() => propose($, triage(issues.map(issue => issue.number)))} />
-                )}
-              </Box>
-              {issues.flatMap((issue, i) => row(issue, i === issues.length - 1 ? '  └' : '  ├', true))}
-            </Box>
-          ),
-        )}
+        {trees}
+        {groups}
         <Box key="footer">
           <Text color="subtle">{reading === undefined ? `read at ${clockOf(view.fetchedAt)}` : 'reading…'}</Text>
         </Box>
+        {e.props.isFocused && (
+          <Box key="hint">
+            <Text color="subtle">Tab moves · Enter presses · e expands all</Text>
+          </Box>
+        )}
       </Box>
     )
   })
