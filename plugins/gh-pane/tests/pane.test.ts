@@ -90,6 +90,7 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/72/sub_issues?per_page=100': [linked(73, 'open')],
   'repos/acme/widgets/issues/79/dependencies/blocked_by': [linked(70, 'open')],
   'repos/acme/widgets/issues/90/dependencies/blocked_by': [linked(70, 'open'), linked(71, 'open'), linked(5, 'open', 'acme/infra'), linked(84, 'open')],
+  'repos/acme/widgets/issues/94/dependencies/blocked_by': [linked(70, 'open')],
   'repos/acme/widgets/issues/91/sub_issues?per_page=100': [linked(92, 'open'), linked(93, 'open')],
   'repos/acme/widgets/issues/92/dependencies/blocked_by': [linked(93, 'open'), linked(5, 'open', 'acme/infra')],
 }
@@ -808,6 +809,21 @@ test('a blocked row reads by #N for one blocker and by N for several, on its one
   expect(await links(ui, 'blocked-90')).toEqual(['#70', '#71', 'acme/infra#5', '#84'])
   const boxes = (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => /^\w+-90$/.test(key ?? ''))
   expect(boxes).toEqual(['row-90', 'title-90', 'blocked-90', 'chips-90', 'facts-90'])
+})
+
+test('an expanded row lists its open blockers whatever its state: an in PR row too', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(70, ['ready-for-agent']),
+      issue(94, [], { issue_dependencies_summary: { blocked_by: 1 } }),
+      { ...issue(58, []), pull_request: {}, html_url: 'https://github.com/acme/widgets/pull/58', body: 'Closes #94' },
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await tail(ui, 94)).toEqual(['PR #58', 'subtle'])
+  await ui.press({ key: 'toggle-94' })
+  expect(await links(ui, 'blocked-94')).toEqual(['#70'])
 })
 
 test('an expanded row wraps its title, blockers, chips and facts onto lines that each draw the rail', async ($, on) => {

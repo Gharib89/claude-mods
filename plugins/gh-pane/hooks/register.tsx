@@ -158,7 +158,17 @@ const GLYPHS = {
   quiet: ['·', 'subtle'],
 } as const
 
-type State = { glyph: keyof typeof GLYPHS; word?: string; pr?: number; blockers?: Issue['blockers']; isReady?: true; isNext?: true; isDone?: true }
+/** `word`: what the row's short tail says, where a PR or blockers do not; `isWaiting`: waiting on triage or info. */
+type State = {
+  glyph: keyof typeof GLYPHS
+  word?: string
+  pr?: number
+  blockers?: Issue['blockers']
+  isReady?: true
+  isNext?: true
+  isDone?: true
+  isWaiting?: true
+}
 
 /**
  * A row's state, first match wins. An issue whose sub-issues are all closed waits only on its own close. A map ticket
@@ -166,17 +176,18 @@ type State = { glyph: keyof typeof GLYPHS; word?: string; pr?: number; blockers?
  * open sub-issues and no state label is a spec, whose work lives in its sub-issues.
  */
 function stateOf(issue: Issue, config: Config, isMapTicket: boolean): State {
+  const count = `${issue.subs.done}/${issue.subs.total}`
   if (issue.pr !== undefined) return { glyph: 'pr', pr: issue.pr }
-  if (issue.subs.total > 0 && issue.subs.done === issue.subs.total) return { glyph: 'done', isDone: true }
+  if (issue.subs.total > 0 && issue.subs.done === issue.subs.total) return { glyph: 'done', word: count, isDone: true }
   if (issue.blockers.length > 0) return { glyph: 'blocked', blockers: issue.blockers }
-  if (issue.assignees.length > 0) return { glyph: 'claimed' }
+  if (issue.assignees.length > 0) return { glyph: 'claimed', word: issue.assignees.join(', ') }
   if (issue.labels.includes(config.readyForAgent)) return { glyph: 'ready', isReady: true }
   if (issue.labels.includes(config.readyForHuman)) return { glyph: 'yours', word: 'yours' }
   const waiting = issue.labels.find(l => l === config.needsTriage || l === config.needsInfo)
-  if (waiting !== undefined) return { glyph: 'quiet', word: waiting }
+  if (waiting !== undefined) return { glyph: 'quiet', word: waiting, isWaiting: true }
   if (issue.labels.includes(config.mapLabel)) return { glyph: 'quiet', word: 'map' }
   if (isMapTicket) return { glyph: 'ready', isNext: true }
-  if (issue.subs.total > 0) return { glyph: 'quiet', word: 'spec' }
+  if (issue.subs.total > 0) return { glyph: 'quiet', word: `spec ${count}` }
   return { glyph: 'quiet', word: 'untriaged' }
 }
 
@@ -393,7 +404,7 @@ export const register: Register = (on, options) => {
     const triage = (issues: number[]) =>
       fill(config.triageCommand, { issues: issues.length === 1 ? `${issues[0]}` : `${issues.map(n => `#${n}`).join(', ')} one by one` })
 
-    // The labels a row shows: all but the state labels its tag already says.
+    // The labels a row shows: all but the state labels its glyph and tail already say.
     const stateLabels = [config.needsTriage, config.needsInfo, config.readyForAgent, config.readyForHuman, config.mapLabel]
     const colorOf = (issue: Issue, label: string) => `#${issue.labelColors[label] || 'ededed'}`
 
@@ -418,7 +429,7 @@ export const register: Register = (on, options) => {
     )
     const words = (text: string, width: number) => pack(text.split(' ').filter(word => word !== ''), width, word => word.length).map(line => line.join(' '))
 
-    const row = (issue: Issue, prefix: string, isWaiting = false) => {
+    const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
       const isExpanded = expanded.all !== expanded.flipped.has(issue.number)
@@ -431,7 +442,6 @@ export const register: Register = (on, options) => {
       const glyph = state.pr !== undefined ? (view.ci[state.pr] ?? 'pr') : state.glyph === 'claimed' && run?.isStale ? 'stale' : state.glyph
       const [mark, color] = GLYPHS[glyph]
       // The short tail: what the glyph alone leaves unsaid. A waiting group's heading already names its rows' state.
-      const count = `${issue.subs.done}/${issue.subs.total}`
       const tail: RenderChildren =
         state.pr !== undefined
           ? ['PR ', ref(state.pr, 'pull')]
@@ -439,15 +449,9 @@ export const register: Register = (on, options) => {
             ? ['by ', <Link key="by" href={state.blockers[0]!.url} label={state.blockers[0]!.label} />]
             : state.blockers
               ? `by ${state.blockers.length}`
-              : glyph === 'claimed' || glyph === 'stale'
-                ? issue.assignees.join(', ')
-                : state.isDone
-                  ? count
-                  : state.word === 'spec'
-                    ? `spec ${count}`
-                    : isWaiting && (state.word === config.needsTriage || state.word === config.needsInfo)
-                      ? undefined
-                      : state.word
+              : inWaitingGroup && state.isWaiting
+                ? undefined
+                : state.word
       const facts = [
         ...(issue.assignees.length > 0 && state.glyph !== 'claimed' ? [issue.assignees.join(', ')] : []),
         `updated ${ageOf(view.fetchedAt, issue.updatedAt)}`,
@@ -466,9 +470,10 @@ export const register: Register = (on, options) => {
           {` ${label} `}
         </Text>
       )
-      const blockerLinks = (state.blockers ?? []).map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
+      const blockerLinks: { label: string; url?: string; sep: string }[] = issue.blockers.map(({ label, url }, i, all) => ({ label, url, sep: i < all.length - 1 ? ',' : '' }))
       return [
-        // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width.
+        // The title grows into what the rest leaves and the engine cuts it at the edge; the parts around it keep their width
+        // (seen on 2.1.312, at 120 and 60 columns).
         <Box key={`row-${issue.number}`} gap={1}>
           <Box flexShrink={0} gap={1}>
             <Text dimColor>{prefix}</Text>
@@ -531,11 +536,11 @@ export const register: Register = (on, options) => {
           lined(
             `blocked-${issue.number}`,
             indent,
-            pack([{ label: 'blocked by', url: '', sep: '' }, ...blockerLinks], width, link => link.label.length + link.sep.length).map(line => (
+            pack([{ label: 'blocked by', sep: '' }, ...blockerLinks], width, link => link.label.length + link.sep.length).map(line => (
               <Text color={GLYPHS.blocked[1]}>
                 {line.flatMap(({ label, url, sep }, i) => [
                   ...(i === 0 ? [] : [' ']),
-                  url === '' ? label : <Link key={label} href={url} label={label} />,
+                  url === undefined ? label : <Link key={label} href={url} label={label} />,
                   sep,
                 ])}
               </Text>

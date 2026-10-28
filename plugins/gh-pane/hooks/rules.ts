@@ -7,7 +7,7 @@ export type RunLine = { text: string; isStale: boolean }
 /**
  * The line under a claimed issue, first match wins: a claim older than a day with no PR closing it is stale, unless
  * the issue closes without a PR (`expectsPr: false`); a matching ship worktree names the run; with neither and no PR,
- * the claim's age. A claim with a PR and no worktree has no line, since its row already says `in PR #N`.
+ * the claim's age. A claim with a PR and no worktree has no line, since its row already says `PR #N`.
  */
 export function runLine(run: { claimedAt?: string; now: string; hasPr: boolean; expectsPr?: boolean; worktree?: string }): RunLine | null {
   const hours = run.claimedAt === undefined ? undefined : (Date.parse(run.now) - Date.parse(run.claimedAt)) / 3_600_000
