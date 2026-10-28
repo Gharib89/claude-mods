@@ -36,18 +36,14 @@ async function list(run: Runner, path: string, pick = (body: any): Raw[] => body
     // gh prints the status line and headers on stdout, then a blank line and the body, and exits 1 on a 304.
     const end = stdout.search(/\r?\n\r?\n/)
     const head = stdout.slice(0, end)
-    let got = cached
-    if (!(cached && exitCode === 1 && /^HTTP\/\S+ 304/.test(head))) {
-      if (exitCode !== 0) throw new Error(`gh api: ${stderr.trim().split('\n')[0]}`)
-      got = {
-        etag: /^etag: *(.+?)\r?$/im.exec(head)?.[1] ?? '',
-        body: JSON.parse(stdout.slice(end).trim()),
-        next: /<([^>]+)>; *rel="next"/.exec(head)?.[1],
-      }
-      pages.set(url, got)
-    }
-    items.push(...pick(got!.body))
-    url = got!.next
+    const isUnchanged = cached !== undefined && exitCode === 1 && /^HTTP\/\S+ 304/.test(head)
+    if (exitCode !== 0 && !isUnchanged) throw new Error(`gh api: ${stderr.trim().split('\n')[0]}`)
+    const got = isUnchanged
+      ? cached
+      : { etag: /^etag: *(.+?)\r?$/im.exec(head)?.[1] ?? '', body: JSON.parse(stdout.slice(end)), next: /<([^>]+)>; *rel="next"/.exec(head)?.[1] }
+    pages.set(url, got)
+    items.push(...pick(got.body))
+    url = got.next
   }
   return items
 }
