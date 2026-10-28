@@ -5,6 +5,11 @@
 #   scripts/check.sh turn [<file>...] typecheck and affected tests; default
 #                                     file set: every uncommitted change
 #   scripts/check.sh full             the whole repo
+#   scripts/check.sh deps             only the installs below
+#
+# Each rung here first installs, frozen and one after another, each DEPS_ROWS
+# root whose present test fails, reported as deps:<name>; a root already present
+# is not reported. The rung still runs after a failed install.
 #
 # stdout: one JSON line {"rung","verdict","checks":{<name>:<status>}}, status
 #         pass | fail | unavailable | skipped | over-budget
@@ -39,8 +44,10 @@ FULL_RUN='prek run --all-files'
 #   <path prefix>|<member>|<globs>|<typecheck>|<tests>|<affected tests>
 # A changed file matching a row's globs belongs to the row with the longest
 # prefix it sits under (an empty prefix is the repo root). Commands run in the
-# member's directory; <affected tests> takes {files}, relative to it, and an
-# empty one runs <tests>. An empty command is no check. Claude Code runs
+# member's directory; <affected tests> takes {files}, the changed files on
+# disk, or {paths}, every changed path with deleted ones included, for a
+# selector that maps a path to tests by name; both are relative to the member,
+# and an empty one runs <tests>. An empty command is no check. Claude Code runs
 # through scripts/claude-pinned.sh, at the build CI pins.
 # shellcheck disable=SC2016 # each row's own subshell expands $d
 TURN_ROWS='plugins/|mods|*.ts *.tsx plugin.json hooks.json tsconfig.json|for d in */; do "$root/scripts/claude-pinned.sh" plugin validate "$d" && continue; exit; done|for d in */; do "$root/scripts/claude-pinned.sh" plugin test "$d" && continue; exit; done|'
@@ -55,13 +62,19 @@ LOCAL_ONLY=''
 # The profile's Excluded: prefixes, one per line: the edit rung skips a file
 # under one, which belongs to no TURN_ROWS row and is no new root.
 EXCLUDED=''
+# The roots whose dependencies install into the checkout, one per line:
+#   <name>|<present test>|<frozen install>
+# Both commands run from the repo root, so each names its root's path, and the
+# present test carries no `|`; the install runs only when that test fails, or
+# when an earlier install of the root never passed.
+DEPS_ROWS=''
 # <<< setup-harness configuration
-: "${EDIT_GLOBS=}" "${EDIT_RUN=}" "${FULL_RUN=}" "${TURN_ROWS=}" "${FULL_ROWS=}" "${LOCAL_ONLY=}" "${EXCLUDED=}"
+: "${DEPS_ROWS=}" "${EDIT_GLOBS=}" "${EDIT_RUN=}" "${FULL_RUN=}" "${TURN_ROWS=}" "${FULL_ROWS=}" "${LOCAL_ONLY=}" "${EXCLUDED=}"
 
 rung=${1:-}
 case $rung in
-  edit | turn | full) shift ;;
-  *) printf 'usage: check.sh edit <file>... | turn [<file>...] | full\n' >&2; exit 2 ;;
+  edit | turn | full | deps) shift ;;
+  *) printf 'usage: check.sh edit <file>... | turn [<file>...] | full | deps\n' >&2; exit 2 ;;
 esac
 root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "check.sh: not in a git repo" >&2; exit 2; }
 cd "$root" || exit 2
@@ -142,9 +155,11 @@ matches() { # <file> <globs>: 0 when one of the globs matches the file name
   return 1
 }
 
-# <file>: 0 when the file sits under an EXCLUDED prefix.
+# <file>: 0 when the file sits under an EXCLUDED prefix, or under .claude/skills/:
+# installed skills, which detection and the runner config skip with no line.
 excluded() {
   local p
+  case $1 in .claude/skills/*) return 0 ;; esac
   while IFS= read -r p; do
     [ -n "$p" ] || continue
     case $1 in "$p"*) return 0 ;; esac
@@ -163,6 +178,25 @@ inside() {
   d=$(cd -- "$d" 2>/dev/null && pwd -P) || return 1
   case $d in "$root") d='' ;; "$root"/*) d=${d#"$root"/}/ ;; *) return 1 ;; esac
   printf '%s' "$d${1##*/}"
+}
+
+# Each DEPS_ROWS root whose present test fails, installed. An install the
+# deadline or a hook's timeout kills leaves a partial tree its present test
+# passes, so a mark in this checkout's own git directory, removed only once
+# the install passes, makes the next call install again.
+install_deps() {
+  local name present cmd marks
+  [ -n "$DEPS_ROWS" ] || return 0
+  marks=$(git rev-parse --absolute-git-dir)/check-deps
+  while IFS='|' read -r name present cmd; do
+    [ -n "$name" ] || continue
+    [ ! -e "$marks/$name" ] && (set +f && eval "$present") < /dev/null > /dev/null 2>&1 && continue
+    mkdir -p "$(dirname "$marks/$name")" && : > "$marks/$name"
+    check "deps:$name" . "$cmd"
+    case $statuses in *"pass$nl") rm -f "$marks/$name" ;; esac
+  done <<EOF
+$DEPS_ROWS
+EOF
 }
 
 rung_edit() {
@@ -201,7 +235,7 @@ EOF
 # <row> [<files, relative to the root>]: the row's typecheck and tests.
 # `full` passes no files and gets the member's whole suite.
 run_row() {
-  local row=$1 prefix member typecheck tests affected dir f rel=''
+  local row=$1 prefix member typecheck tests affected dir f q rel=''
   shift
   IFS='|' read -r prefix member _ typecheck tests affected <<EOF
 $row
@@ -214,7 +248,8 @@ EOF
     # shellcheck disable=SC2086 # the list splits on newlines only
     set -- $rel
     unset IFS
-    check "tests:$member" "$dir" "${affected//\{files\}/$(quoted "$@")}"
+    q=$(quoted "$@"); affected=${affected//\{files\}/$q}
+    check "tests:$member" "$dir" "${affected//\{paths\}/$q}"
   elif [ -n "$tests" ]; then
     check "tests:$member" "$dir" "$tests"
   fi
@@ -224,9 +259,13 @@ rung_turn() {
   local f o rows='' pairs='' row files pair tab='	' new='' rec changed='' p
   if [ "$#" -eq 0 ]; then
     # Every uncommitted change, untracked files included. NUL-separated, so
-    # no path comes back quoted; a rename's second record is its old path.
+    # no path comes back quoted; a rename's second record is its old path,
+    # which counts as deleted, and a copy's is a file that has not changed.
     while IFS= read -r -d '' rec; do
-      case $rec in R* | C*) IFS= read -r -d '' _ ;; esac
+      case $rec in
+        R*) IFS= read -r -d '' p; changed="$changed$p$nl" ;;
+        C*) IFS= read -r -d '' _ ;;
+      esac
       changed="$changed${rec#???}$nl"
     done < <(git status --porcelain -z --untracked-files=all)
     local IFS=$nl
@@ -247,9 +286,11 @@ rung_turn() {
       '') ;;
       new-root) new="$new ${f%/*}" ;;
       # A deleted file still selects its member, whose typecheck may now
-      # break, but is no argument to affected tests.
+      # break, but is an argument to affected tests only in a row naming
+      # {paths}, whose selector maps a path to tests by name.
       *) case $nl$rows in *"$nl$o$nl"*) ;; *) rows="$rows$o$nl" ;; esac
-         [ -e "$f" ] && pairs="$pairs$o$tab$f$nl" ;;
+         case ${o#*|*|*|*|*|} in *'{paths}'*) ;; *) [ -e "$f" ] || continue ;; esac
+         pairs="$pairs$o$tab$f$nl" ;;
     esac
   done
   if [ -n "$new" ]; then
@@ -322,6 +363,7 @@ collect() {
 
 rung_full() {
   local row name
+  [ -n "$DEPS_ROWS" ] && { spawn deps install_deps; wait; }
   # The runner first and alone: a hook in fix mode rewrites files the rows read.
   [ -n "$FULL_RUN" ] && { spawn runner check runner . "$FULL_RUN"; wait; }
   while IFS= read -r row; do
@@ -349,9 +391,10 @@ EOF
 # reads a function called only indirectly as never invoked (SC2317, SC2329),
 # and a repo that lints this file at ShellCheck's default severity fails on it.
 case $rung in
-  edit) rung_edit "$@" ;;
-  turn) rung_turn "$@" ;;
+  edit) install_deps; rung_edit "$@" ;;
+  turn) install_deps; rung_turn "$@" ;;
   full) rung_full "$@" ;;
+  deps) install_deps; [ -n "$names" ] || record deps skipped ;;
 esac
 
 # One JSON line. A real failure outranks every other outcome, so it still
