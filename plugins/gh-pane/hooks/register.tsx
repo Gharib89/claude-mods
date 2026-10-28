@@ -4,7 +4,7 @@
 // reply, and once the PR is merged, there or by a ship run on its own, one clears the session and runs the next command.
 
 import { atom, read, update } from 'claude-code'
-import type { Elements, EngineInterface, PluginOptions, Register } from 'claude-code'
+import type { Elements, EngineInterface, PluginOptions, Register, Timer } from 'claude-code'
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
@@ -40,8 +40,10 @@ const cut = (text: string, room: number) => (text.length <= room ? text : `${tex
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0]
 
-// Reads overlap (a timer, a gh call, the command): only the latest one started may land.
-let reads = 0
+// One read at a time, however many triggers (a timer, a gh call, the command) arrive: one asked for during a read
+// waits for one more read, started once that read lands, which every later ask joins until it starts.
+let reading: Promise<Snapshot> | undefined
+let rereading: Promise<Snapshot> | undefined
 // The last snapshot landed, which the pane draws while `$.state` holds none; the state copy stays because its write
 // redraws the pane. A /clear empties `$.state` while the pane stays up, and its one hook, `session.end`, runs before
 // that, so a read started there lands in the old session (seen on 2.1.289). This module variable outlives the /clear,
@@ -50,6 +52,9 @@ let kept: { cwd: string; view: Snapshot } | null = null
 // Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
 // is one: it outlives the /clear the next button runs.
 const expansion = new Map<string, { all: boolean; flipped: Set<number> }>()
+// The 120 s re-read. Should a timer outlive its session, a later session.start in this process replaces it rather than
+// stacking a second; cancelling one already stopped does nothing.
+let ticking: Timer | undefined
 
 // Black or white ink on a label's hex colour, by perceived brightness.
 const inkOn = (hex: string) => {
@@ -62,22 +67,46 @@ const age = (now: string, then: string) => {
   return hours < 1 ? `${Math.max(1, Math.floor(hours * 60))}m ago` : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
 }
 
-const runnerOf = ($: EngineInterface): Runner => async argv => {
-  const { exitCode, stdout, stderr } = await $.process.run(argv).catch((error: unknown) => {
+// What a snapshot draws: every fact but the read's time, which moves on every read, and in its place the ages it draws,
+// which move with that time alone. A claim's run line counts whenever the pane could draw it, stale or not.
+const drawnOf = (view: Snapshot) =>
+  JSON.stringify(
+    'error' in view
+      ? view
+      : {
+          ...view,
+          fetchedAt: undefined,
+          ages: view.issues.map(issue => [age(view.fetchedAt, issue.updatedAt), runLine({ ...issue, now: view.fetchedAt, hasPr: false })?.text]),
+        },
+  )
+
+const runnerOf = ($: EngineInterface): Runner => argv =>
+  $.process.run(argv).catch((error: unknown) => {
     throw new Error(`${argv[0]} did not run (not installed, or timed out): ${messageOf(error)}`)
   })
-  if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
-  return stdout
+
+// Answers a snapshot read after the call: the read in flight when it came may predate what the caller waits on.
+function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
+  if (reading === undefined) {
+    reading = land($, config).finally(() => (reading = undefined))
+    return reading
+  }
+  rereading ??= reading
+    .catch(() => undefined)
+    .then(() => {
+      rereading = undefined
+      return refresh($, config)
+    })
+  return rereading
 }
 
-// Answers the snapshot it read, landed or not: a read overtaken by a newer one is still fresh for its caller.
-async function refresh($: EngineInterface, config: Config): Promise<Snapshot> {
-  const ticket = ++reads
+async function land($: EngineInterface, config: Config): Promise<Snapshot> {
   const cwd = await $.session.cwd()
   const run = runnerOf($)
   const now = new Date(await $.clock.now()).toISOString()
   const next = await readBacklog(run, config.worktreeLayout, now).catch((error: unknown) => ({ error: `gh-pane: ${messageOf(error)}` }))
-  if (ticket !== reads) return next
+  // An idle pane is left alone: a read that draws what the landed one draws writes nothing, so nothing redraws.
+  if (kept?.cwd === cwd && drawnOf(kept.view) === drawnOf(next)) return next
   kept = { cwd, view: next }
   await update($, snapshot, () => next)
   return next
@@ -254,7 +283,8 @@ export const register: Register = (on, options) => {
       // Typed mid-turn, the pane opens or hides at once instead of waiting for the turn to end.
       immediate: true,
     })
-    $.clock.every(120_000, () => refreshIfOpen($, config))
+    ticking?.cancel()
+    ticking = $.clock.every(120_000, () => refreshIfOpen($, config))
     return next(e)
   })
 

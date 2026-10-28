@@ -18,6 +18,7 @@ const issue = (number: number, labels: string[], extra: Raw = {}): Raw => ({
   number,
   title: `issue ${number}`,
   html_url: `https://github.com/acme/widgets/issues/${number}`,
+  repository_url: 'https://api.github.com/repos/acme/widgets',
   labels: labels.map(name => ({ name, color: COLORS[name] ?? 'ededed' })),
   assignees: [],
   updated_at: ago(3),
@@ -59,7 +60,11 @@ const checks = (...runs: [status: string, conclusion: string | null][]) => ({
   total_count: runs.length,
   check_runs: runs.map(([status, conclusion]) => ({ status, conclusion })),
 })
-const checksOf = (pr: number) => `repos/acme/widgets/commits/refs/pull/${pr}/head/check-runs?per_page=100`
+const checksOf = (pr: number) => `repos/{owner}/{repo}/commits/refs/pull/${pr}/head/check-runs?per_page=100`
+/** The issues list's first page, as the mod reads it. */
+const ISSUES = 'repos/{owner}/{repo}/issues?state=open&per_page=100'
+/** The repo read only an empty backlog makes, for its name. */
+const REPO_LOOKUP = ['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name']
 
 const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/20/sub_issues?per_page=100': [
@@ -100,27 +105,36 @@ type Host = {
   /** Each PR's check runs; a PR left out has none. */
   ci?: Record<number, ReturnType<typeof checks>>
   checksFail?: string
-  /** How many items one page of a list read holds; every list and check-runs read spans pages of this size. */
+  /** How many items one page of a list read holds, in place of the read's `per_page` (GitHub's default 30 without one). */
   perPage?: number
 }
 
-/** What `gh api --paginate <path> --jq <filter>` prints: the filter's output on every page, one JSON value per line. */
-function paged(items: unknown[], perPage: number, filter: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
-  const pages = Array.from({ length: Math.max(1, Math.ceil(items.length / perPage)) }, (_, i) => toPage(items.slice(i * perPage, (i + 1) * perPage)))
-  const pick: Record<string, (page: any) => unknown[]> = {
-    '.[]': page => page,
-    '.check_runs[]': page => page.check_runs,
-  }
-  if (filter === undefined || !Object.hasOwn(pick, filter)) throw new Error(`the fake gh knows no --jq ${filter}`)
-  return pages.flatMap(pick[filter]!).map(value => `${JSON.stringify(value)}\n`).join('')
+const ORIGIN = 'https://api.github.com/'
+// Any short digest will do: an ETag only has to change when its page does.
+const etagOf = (body: string) => `W/"${[...body].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(16)}"`
+
+/**
+ * What `gh api -i [-H 'If-None-Match: <etag>'] <path>` prints for one page of `items`: as gh 2.103 does, the status
+ * line, CRLF headers with the ETag and, past the first page, a `Link: rel="next"` to the absolute URL of the next
+ * page; then a blank line and the body. A matching ETag answers 304 with no Link and no body, exiting 1.
+ */
+function page(path: string, items: unknown[], size: number | undefined, etag: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
+  const [base = path, n = '1'] = path.split(/[?&]page=/)
+  const at = Number(n)
+  const perPage = size ?? Number(/[?&]per_page=(\d+)/.exec(base)?.[1] ?? 30)
+  const body = JSON.stringify(toPage(items.slice((at - 1) * perPage, at * perPage)))
+  const tag = etagOf(body)
+  if (etag === tag) return { exitCode: 1, stdout: `HTTP/2.0 304 Not Modified\nEtag: ${tag.slice(2)}\r\n\r\n`, stderr: 'gh: HTTP 304\n' }
+  const next = at * perPage < items.length ? `Link: <${ORIGIN}${base}${base.includes('?') ? '&' : '?'}page=${at + 1}>; rel="next"\r\n` : ''
+  return { exitCode: 0, stdout: `HTTP/2.0 200 OK\nContent-Type: application/json; charset=utf-8\r\nEtag: ${tag}\r\n${next}\r\n${body}`, stderr: '' }
 }
 
 /**
- * Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. Read number `repo.failsAt` fails.
- * `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent` and `ran` are the prompts and
- * the commands the mod submitted or ran, `typed` the prompts a person typed.
+ * Stubs git and gh behind `$.process.run`; answers every argv it saw in `calls`. The issues list's first page, read
+ * number `backlog.failsAt`, fails. `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent`
+ * and `ran` are the prompts and the commands the mod submitted or ran, `typed` the prompts a person typed.
  */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail, perPage = 100 }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail, perPage }: Host = {}) {
   const calls: string[][] = []
   const fixture = { issues }
   const pulls: Record<number, boolean> = {}
@@ -131,42 +145,54 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   const clock = mock.clock(on, { now: NOW })
   const panes = { isOpen: false, isBroken: false }
   const toasts: string[] = []
-  const repo = { reads: 0, failsAt: 0 }
+  // `held.until`: what each read of the issues list's first page waits on before it answers.
+  const backlog = { reads: 0, failsAt: 0, held: { until: Promise.resolve() } }
+  /** The calls answered 304 Not Modified. */
+  const unchanged: string[][] = []
   on('process.run', async (_$, e, next) => {
     calls.push([...e.argv])
     const [cmd, sub, ...rest] = e.argv
-    const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
-    const fail = (stderr: string) => ({ value: { exitCode: 1, stdout: '', stderr, isStdoutTruncated: false, isStderrTruncated: false } })
+    const answer = (out: { exitCode: number; stdout: string; stderr: string }) => {
+      if (out.stdout.startsWith('HTTP/2.0 304')) unchanged.push([...e.argv])
+      return { value: { ...out, isStdoutTruncated: false, isStderrTruncated: false } }
+    }
+    const ok = (stdout: string) => answer({ exitCode: 0, stdout, stderr: '' })
+    const fail = (stderr: string) => answer({ exitCode: 1, stdout: '', stderr })
     if (cmd === 'git' && sub === 'worktree') return ok(`${PORCELAIN}\n`)
     // Nothing beneath answers, so $.process.run rejects as it does for a command that cannot start.
     if (ghMissing) return next(e)
     if (ghFails !== undefined) return fail(`${ghFails}\nmore detail\n`)
     // gh 2.46's own words: --slurp came in gh 2.48.
     if (rest.includes('--slurp')) return fail('unknown flag: --slurp\n\nUsage:  gh api <endpoint> [flags]\n')
-    if (rest[0] === 'repos/{owner}/{repo}') {
-      if (++repo.reads === repo.failsAt) return fail('gh: HTTP 401: Bad credentials\n')
-      // gh's own words when no remote of the checkout is on a GitHub host.
-      return isOffGitHub
-        ? fail('unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitHub host.\n')
-        : ok('acme/widgets\n')
+    const target = rest.find(arg => arg.startsWith('repos/') || arg.startsWith(ORIGIN))!
+    // gh's own words when no remote of the checkout is on a GitHub host.
+    if (isOffGitHub && target.includes('{owner}/{repo}')) {
+      return fail('unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitHub host.\n')
     }
-    const pull = /^repos\/\{owner\}\/\{repo\}\/pulls\/(\d+)$/.exec(rest[0] ?? '')
+    const path = target.replace(ORIGIN, '').replace('{owner}/{repo}', 'acme/widgets')
+    if (path === 'repos/acme/widgets') return ok('acme/widgets\n')
+    const pull = /^repos\/acme\/widgets\/pulls\/(\d+)$/.exec(path)
     if (pull) return pullFails === undefined ? ok(`${pulls[Number(pull[1])] ?? false}\n`) : fail(pullFails)
-    const path = rest.find(arg => arg.startsWith('repos/'))!
-    const filter = rest.includes('--jq') ? rest[rest.indexOf('--jq') + 1] : undefined
+    const header = rest[rest.indexOf('-H') + 1] ?? ''
+    const etag = header.startsWith('If-None-Match: ') ? header.slice('If-None-Match: '.length) : undefined
     const events = /issues\/(\d+)\/events/.exec(path)
     if (events) {
       const hours = fixture.issues.find(i => i.number === Number(events[1]))?.claimedHoursAgo as number
-      return ok(paged([{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }], perPage, filter))
+      return answer(page(path, [{ event: 'labeled', created_at: ago(200) }, { event: 'assigned', created_at: ago(hours) }], perPage, etag))
     }
-    if (path === 'repos/acme/widgets/issues?state=open&per_page=100') return ok(paged(fixture.issues, perPage, filter))
+    const base = path.split(/[?&]page=/)[0]!
+    if (base === 'repos/acme/widgets/issues?state=open&per_page=100') {
+      if (base === path && ++backlog.reads === backlog.failsAt) return fail('gh: HTTP 401: Bad credentials\n')
+      if (base === path) await backlog.held.until
+      return answer(page(path, fixture.issues, perPage, etag))
+    }
     const runs = /commits\/refs\/pull\/(\d+)\/head\/check-runs/.exec(path)
     if (runs) {
       if (checksFail !== undefined) return fail(`${checksFail}\n`)
       const all = (ci[Number(runs[1])] ?? checks()).check_runs
-      return ok(paged(all, perPage, filter, chunk => ({ total_count: all.length, check_runs: chunk })))
+      return answer(page(path, all, perPage, etag, chunk => ({ total_count: all.length, check_runs: chunk })))
     }
-    return ok(paged(API[path] ?? [], perPage, filter))
+    return answer(page(path, API[base] ?? [], perPage, etag))
   })
   const opened: string[] = []
   const closed: string[] = []
@@ -213,7 +239,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   })
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
-  return { calls, filled, clock, panes, repo, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
+  return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
 }
 
 type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find'>
@@ -437,6 +463,73 @@ test('every list and check-runs read arrives whole when it spans several pages',
   expect(row[row.findIndex(([text]) => text.startsWith('in PR')) + 1]).toEqual(['✗', 'red'])
 })
 
+test('an unchanged second refresh makes the same calls, each conditional on its ETag and answered 304, and draws the same rows', async ($, on) => {
+  const { calls, unchanged, clock } = host(on, { ci: { 31: checks(['completed', 'success']) } })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const rows = () => Promise.all(BACKLOG.map(raw => spans(ui, `row-${raw.number}`)))
+  const drawn = await rows()
+  // The issues list, the worktrees, 3 unfinished sub-issue lists (#20, #27, #40), 1 blocker list (#25), 5 claims'
+  // events (#19, #22, #24, #35, #36) and the check runs of #31, the one PR closing an open issue.
+  expect(calls.length).toBe(12)
+  // The repo's name comes from the issues' repository_url: no repo lookup.
+  expect(calls).not.toContainEqual(REPO_LOOKUP)
+  const gh = calls.filter(argv => argv[0] === 'gh')
+  // One page a call, never gh's own --paginate, which a 304 on the first page stops.
+  for (const argv of gh) expect(argv.slice(0, 3)).toEqual(['gh', 'api', '-i'])
+  expect(unchanged).toEqual([])
+
+  calls.length = 0
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(calls.length).toBe(12)
+  expect(unchanged.length).toBe(11)
+  for (const argv of unchanged) expect(argv).toContainEqual(expect.stringMatching(/^If-None-Match: W\/"[0-9a-f]+"$/))
+  expect(await rows()).toEqual(drawn)
+})
+
+test('a full last page answered 304 is read again whole, so a list that grew onto a new page shows the new item', async ($, on) => {
+  // Exactly one page of 100: a 304 carries no Link, so the cached page alone cannot say a page 2 now exists.
+  const { clock, fixture } = host(on, { issues: Array.from({ length: 100 }, (_, i) => issue(i + 1, [])) })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'row-100' })).toBeDefined()
+  // An old issue reopens onto page 2, leaving page 1 as it was.
+  fixture.issues = [...fixture.issues, issue(101, [])]
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(await ui.find({ key: 'row-101' })).toBeDefined()
+})
+
+test('a refresh that would draw what the pane shows writes no state; a new fact or a drawn age that moved writes it', async ($, on) => {
+  // #50's claim turns a day old, and stale, a minute from now.
+  const { clock, fixture } = host(on, { issues: [...BACKLOG, issue(50, ['ready-for-agent'], assigned('ann', 24 - 0.5 / 60))] })
+  const writes: unknown[] = []
+  on('state.set', { plugin: 'gh-pane', key: 'snapshot' }, async ($, e, next) => {
+    writes.push(e.value)
+    return next(e)
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(writes).toHaveLength(1)
+
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(1)
+
+  fixture.issues = fixture.issues.map(raw => (raw.number === 29 ? { ...raw, title: 'renamed' } : raw))
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(2)
+
+  expect(await ui.find({ key: 'release-50' })).toBeUndefined()
+  await clock.advance(60_000)
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(writes).toHaveLength(3)
+  expect(await ui.find({ key: 'release-50' })).toBeDefined()
+})
+
 test('a failed check-runs read fails the refresh, as any failed read does', async ($, on) => {
   host(on, { checksFail: 'gh: HTTP 502: Bad Gateway' })
   await open($)
@@ -608,11 +701,12 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   expect(filled).toEqual(['/wayfinder 4 7', '/wayfinder 4 11'])
 })
 
-test('an empty repo says so, with no fixture data', async ($, on) => {
-  host(on, { issues: [] })
+test('an empty repo says so, with no fixture data, naming the repo from the one lookup it makes', async ($, on) => {
+  const { calls } = host(on, { issues: [] })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: 'Nothing open in acme/widgets.' })).toBeDefined()
+  expect(calls.filter(argv => argv.join(' ') === REPO_LOOKUP.join(' '))).toHaveLength(1)
   expect(await ui.find({ text: /#\d/ })).toBeUndefined()
 })
 
@@ -631,12 +725,12 @@ for (const [name, setup, line] of [
 }
 
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
-  const { calls, clock, repo } = host(on)
-  repo.failsAt = 1
+  const { calls, clock, backlog } = host(on)
+  backlog.failsAt = 1
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ text: 'gh-pane: gh api: gh: HTTP 401: Bad credentials' })).toBeDefined()
-  const reads = () => calls.filter(argv => argv[2] === 'repos/{owner}/{repo}').length
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
   expect(reads()).toBe(1)
 
   await ui.press({ key: 'retry' })
@@ -662,7 +756,7 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   // Registered immediate, so typed mid-turn it opens or hides the pane at once.
   expect(commands).toEqual([expect.objectContaining({ name: 'gh-pane', immediate: true })])
   await open($)
-  const reads = () => calls.filter(argv => argv.includes('repos/acme/widgets/issues?state=open&per_page=100')).length
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
   expect(reads()).toBe(1)
 
   await $.tool.call({ tool: 'Bash', command: 'ls -la' })
@@ -699,6 +793,38 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   expect(reads()).toBe(7)
 })
 
+test('three triggers during one read cause exactly one rerun, once that read lands', async ($, on) => {
+  const { calls, clock, backlog } = host(on)
+  on('tool.call', async () => ({ result: '' }))
+  await open($)
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
+  expect(reads()).toBe(1)
+
+  let release = () => {}
+  backlog.held.until = new Promise(resolve => (release = resolve))
+  await $.tool.call({ tool: 'Bash', command: 'gh issue list' })
+  await clock.settle()
+  expect(reads()).toBe(2)
+  for (const command of ['gh pr view 1', 'git push', 'gh issue view 2']) await $.tool.call({ tool: 'Bash', command })
+  await clock.settle()
+  expect(reads()).toBe(2)
+  release()
+  await clock.settle()
+  expect(reads()).toBe(3)
+})
+
+test('a second session.start in one process keeps one 120 s timer', async ($, on) => {
+  const { calls, clock } = host(on)
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/w/widgets', surface: 'terminal', isInteractive: true })
+  await open($)
+  const reads = () => calls.filter(argv => argv.includes(ISSUES)).length
+  await clock.advance(120_000)
+  expect(reads()).toBe(2)
+})
+
 test('a timer tick or a re-read that fails says so in a toast', async ($, on) => {
   const { clock, panes, toasts } = host(on)
   on('tool.call', async () => ({ result: '' }))
@@ -712,13 +838,13 @@ test('a timer tick or a re-read that fails says so in a toast', async ($, on) =>
   expect(toasts).toEqual([expect.stringMatching(/^gh-pane did not refresh: ./), expect.stringMatching(/^gh-pane did not refresh: ./)])
 })
 
-test('a newer read wins over an older one that answers after it', async ($, on) => {
-  const { repo, clock } = host(on)
+test('a read asked for during another lands after it: the later answer wins', async ($, on) => {
+  const { backlog, clock } = host(on)
   on('tool.call', async () => ({ result: '' }))
   await open($)
-  // Two reads in flight: the older still has the backlog's sub-issues, blockers and claims to read when the newer
-  // fails at its first call and lands.
-  repo.failsAt = 3
+  // The second trigger comes while the first read still has the backlog's sub-issues, blockers and claims to read; the
+  // rerun it waits for fails at its first call and lands last.
+  backlog.failsAt = 3
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await clock.settle()
@@ -963,10 +1089,10 @@ test('a subagent turn while merging settles nothing', async ($, on) => {
 })
 
 test('a next-command read that fails says so in a toast and shows no next button', async ($, on) => {
-  const { pulls, repo, toasts, clock } = host(on)
+  const { pulls, backlog, toasts, clock } = host(on)
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   pulls[42] = true
-  repo.failsAt = 1
+  backlog.failsAt = 1
   await answer($, GATE)
   await type($, 'merge')
   await answer($, MERGED)
@@ -1100,6 +1226,18 @@ for (const [name, options, request] of [
     expect(filled).toEqual([request])
   })
 }
+
+test('a finished sub-issue list is never read: its children could match no open issue', async ($, on) => {
+  const { calls } = host(on, {
+    issues: [
+      issue(3, [], { sub_issues_summary: { total: 2, completed: 2 } }),
+      issue(5, [], { sub_issues_summary: { total: 2, completed: 1 } }),
+    ],
+  })
+  await open($)
+  const read = calls.flatMap(argv => argv.filter(arg => arg.includes('/sub_issues')))
+  expect(read).toEqual(['repos/{owner}/{repo}/issues/5/sub_issues?per_page=100'])
+})
 
 test('all done ranks after in PR and before blocked, claimed and ready', async ($, on) => {
   host(on, {
