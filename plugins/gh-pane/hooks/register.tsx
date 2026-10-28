@@ -347,6 +347,9 @@ export const register: Register = (on, options) => {
   })
 
   // One button above the prompt that shows or hides the pane; whatever another plugin draws there stays above it.
+  // Seen on 2.1.312: with the pane inline in an 80x40 terminal, this hook ran and drew the button but got maxRows 0, so
+  // none of it showed; it showed at 80x80, at 80x40 with the pane hidden, and at 120x40 with the pane docked. Its
+  // maxRows fell from 13 to 10 to 0 as the inline pane opened and filled: the engine's layout, not this hook, drops it.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
     if (e.props.hasSurvey) return below
