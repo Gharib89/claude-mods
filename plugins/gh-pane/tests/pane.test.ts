@@ -851,6 +851,18 @@ test('an expanded row wraps its title, blockers, chips and facts onto lines that
   expect(await links(ui, 'blocked-92')).toEqual(['#93', 'acme/infra#5'])
 })
 
+test('an expanded title breaks a word wider than its line, so no part of it is cut', async ($, on) => {
+  const title = 'see plugins/gh-pane/hooks/register.tsx-and-a-much-longer-tail for the rows'
+  host(on, { issues: [issue(7, [], { title })] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 30 }, surface: 'terminal' })
+  await ui.press({ key: 'toggle-7' })
+  const lines = await Promise.all((await linesOf(ui, 'title-7')).map(async key => (await spans(ui, key)).at(-1)![0]))
+  // The rail `    ` and its gap leave 25 columns.
+  for (const line of lines) expect([line, line.length <= 25]).toEqual([line, true])
+  expect(lines.join('').replaceAll(' ', '')).toBe(title.replaceAll(' ', ''))
+})
+
 test('a claim and an update under an hour old read just now', async ($, on) => {
   host(on, { issues: [issue(95, [], { ...assigned('ann', 0.2), updated_at: ago(0.5) })] })
   await open($)

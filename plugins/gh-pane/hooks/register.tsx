@@ -427,7 +427,13 @@ export const register: Register = (on, options) => {
         ))}
       </Box>
     )
-    const words = (text: string, width: number) => pack(text.split(' ').filter(word => word !== ''), width, word => word.length).map(line => line.join(' '))
+    // A word wider than the line breaks into line-wide pieces, so an expanded line never cuts what it shows.
+    const words = (text: string, width: number) =>
+      pack(
+        text.split(' ').flatMap(word => word.match(new RegExp(`.{1,${width}}`, 'gu')) ?? []),
+        width,
+        word => word.length,
+      ).map(line => line.join(' '))
 
     const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
