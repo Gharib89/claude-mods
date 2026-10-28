@@ -8,7 +8,7 @@ import type { Elements, EngineInterface, PluginOptions, Register, RenderChildren
 
 import type { Gate, Issue, Snapshot } from '../types'
 import { isMerged, readBacklog, type Runner } from './github'
-import { ageOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine } from './rules'
+import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wordsOf } from './rules'
 
 const PANE = 'gh-pane'
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
@@ -427,14 +427,6 @@ export const register: Register = (on, options) => {
         ))}
       </Box>
     )
-    // A word wider than the line breaks into line-wide pieces, so an expanded line never cuts what it shows.
-    const words = (text: string, width: number) =>
-      pack(
-        text.split(' ').flatMap(word => word.match(new RegExp(`.{1,${width}}`, 'gu')) ?? []),
-        width,
-        word => word.length,
-      ).map(line => line.join(' '))
-
     const row = (issue: Issue, prefix: string, inWaitingGroup = false) => {
       const state = stateOf(issue, config, isMapTicket(issue))
       const labels = issue.labels.filter(label => !stateLabels.includes(label))
@@ -511,12 +503,12 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         </Box>,
-        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
+        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix, glyph and tail too (2.1.296).
         isExpanded &&
           lined(
             `title-${issue.number}`,
             indent,
-            words(issue.title, width).map(line => (
+            wordsOf(issue.title, width).map(line => (
               <Text bold={state.isReady === true} wrap="truncate-end">
                 {line}
               </Text>
@@ -543,7 +535,7 @@ export const register: Register = (on, options) => {
           lined(
             `blocked-${issue.number}`,
             indent,
-            pack([{ label: 'blocked by', sep: '' }, ...blockerLinks], width, link => link.label.length + link.sep.length).map(line => (
+            pack([{ label: 'blocked by', sep: '' }, ...blockerLinks], width, link => cellsOf(link.label + link.sep)).map(line => (
               <Text color={GLYPHS.blocked[1]}>
                 {line.flatMap(({ label, url, sep }, i) => [
                   ...(i === 0 ? [] : [' ']),
@@ -558,13 +550,13 @@ export const register: Register = (on, options) => {
           lined(
             `chips-${issue.number}`,
             indent,
-            pack(labels, width, label => label.length + 2).map(line => <Box gap={1}>{line.map(chip)}</Box>),
+            pack(labels, width, label => cellsOf(label) + 2).map(line => <Box gap={1}>{line.map(chip)}</Box>),
           ),
         isExpanded &&
           lined(
             `facts-${issue.number}`,
             indent,
-            words(facts.join(' · '), width).map(line => <Text dimColor>{line}</Text>),
+            wordsOf(facts.join(' · '), width).map(line => <Text dimColor>{line}</Text>),
           ),
       ]
     }

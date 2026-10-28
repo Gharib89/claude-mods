@@ -1,5 +1,6 @@
 import type { On } from 'claude-code'
 import { type Engine, expect, mock, test } from 'claude-code/testing'
+import { cellsOf } from '../hooks/rules'
 
 const NOW = Date.parse('2026-10-04T12:00:00Z')
 const ago = (hours: number) => new Date(NOW - hours * 3_600_000).toISOString()
@@ -588,7 +589,7 @@ test('a row toggle expands that row alone: its title, run line, chips and facts,
   expect(await toggle(7)).toBe('▾')
   expect(await boxes(7)).toEqual(['row-7', 'title-7', 'run-7', 'chips-7', 'facts-7'])
   expect(await ui.find({ key: 'title-8' })).toBeUndefined()
-  // The first line keeps the number, tag and buttons; the whole title and the chips move below it.
+  // The first line keeps the glyph, number, tail and buttons; the whole title and the chips move below it.
   expect((await spans(ui, 'row-7')).map(([text]) => text)).toEqual(['•', '◐', '#7', 'ann'])
   expect((await spans(ui, 'title-7')).at(-1)).toEqual([LONG, ''])
   expect((await spans(ui, 'run-7')).at(-1)).toEqual(['◐ claimed 5h ago, no PR yet', 'suggestion'])
@@ -599,7 +600,7 @@ test('a row toggle expands that row alone: its title, run line, chips and facts,
     [' wontfix ', '#000000 on #ffffff'],
     [' XL ', '#ffffff on #1d1d1d'],
   ])
-  // The tag already names ann, so the facts line does not.
+  // The tail already names ann, so the facts line does not.
   expect((await spans(ui, 'facts-7')).at(-1)?.[0]).toBe('updated 3h ago · 2 comments · v1')
 
   await ui.press({ key: 'toggle-8' })
@@ -860,6 +861,17 @@ test('an expanded title breaks a word wider than its line, so no part of it is c
   const lines = await Promise.all((await linesOf(ui, 'title-7')).map(async key => (await spans(ui, key)).at(-1)![0]))
   // The rail `    ` and its gap leave 25 columns.
   for (const line of lines) expect([line, line.length <= 25]).toEqual([line, true])
+  expect(lines.join('').replaceAll(' ', '')).toBe(title.replaceAll(' ', ''))
+})
+
+test('an expanded title in wide characters fits its line by cells, so no part of it is cut', async ($, on) => {
+  const title = '修正: 日本語のタイトルが長すぎて切れる 🚀 rows'
+  host(on, { issues: [issue(7, [], { title })] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 30 }, surface: 'terminal' })
+  await ui.press({ key: 'toggle-7' })
+  const lines = await Promise.all((await linesOf(ui, 'title-7')).map(async key => (await spans(ui, key)).at(-1)![0]))
+  for (const line of lines) expect([line, cellsOf(line) <= 25]).toEqual([line, true])
   expect(lines.join('').replaceAll(' ', '')).toBe(title.replaceAll(' ', ''))
 })
 

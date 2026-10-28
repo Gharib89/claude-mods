@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ageOf, closesOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, worktreeIssue } from '../hooks/rules'
+import { ageOf, cellsOf, closesOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wordsOf, worktreeIssue } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
@@ -51,6 +51,21 @@ test('pack fills lines up to the room, one column between items, and gives an it
   expect(words('aa bb cc', 8)).toEqual(['aa bb cc'])
   expect(words('aa bbbbbbbbbb cc', 5)).toEqual(['aa', 'bbbbbbbbbb', 'cc'])
   expect(pack([], 5, () => 1)).toEqual([])
+})
+
+test('a wide character or an emoji takes two cells, any other character one', () => {
+  expect(cellsOf('abc')).toBe(3)
+  expect(cellsOf('日本語')).toBe(6)
+  expect(cellsOf('fix 🚀 now')).toBe(10)
+  expect(cellsOf('▶ ◆ ⊘')).toBe(5)
+})
+
+test('wordsOf packs text by cells and breaks a word wider than the line, wide characters included', () => {
+  expect(wordsOf('aa bb cc', 5)).toEqual(['aa bb', 'cc'])
+  expect(wordsOf('abcdefgh', 3)).toEqual(['abc', 'def', 'gh'])
+  // Six wide characters draw 12 cells: in 5 they take three lines of at most 4.
+  expect(wordsOf('日本語日本語', 5)).toEqual(['日本', '語日', '本語'])
+  for (const line of wordsOf('修正 the 日本語のタイトル row', 8)) expect([line, cellsOf(line) <= 8]).toEqual([line, true])
 })
 
 test('a matching worktree names the run', () => {

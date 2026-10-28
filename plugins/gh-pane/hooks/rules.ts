@@ -44,6 +44,29 @@ export function pack<T>(items: T[], room: number, width: (item: T) => number): T
   return lines
 }
 
+// East Asian wide and fullwidth blocks, and the emoji a terminal draws wide by default.
+const WIDE = /[\p{Emoji_Presentation}ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\u{20000}-\u{3fffd}]/u
+
+/** Terminal cells `text` draws in: two for a wide character or an emoji, one for any other. */
+export function cellsOf(text: string): number {
+  let cells = 0
+  for (const char of text) cells += WIDE.test(char) ? 2 : 1
+  return cells
+}
+
+/** `text` in lines of at most `width` cells, split at spaces; a word wider than `width` breaks across lines. */
+export function wordsOf(text: string, width: number): string[] {
+  const pieces = text.split(' ').flatMap(word => {
+    const parts = ['']
+    for (const char of word) {
+      if (parts.at(-1) !== '' && cellsOf(parts.at(-1)! + char) > width) parts.push('')
+      parts[parts.length - 1] += char
+    }
+    return parts
+  })
+  return pack(pieces, width, cellsOf).map(line => line.join(' '))
+}
+
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
