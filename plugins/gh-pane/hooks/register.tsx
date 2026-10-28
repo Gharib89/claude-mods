@@ -143,7 +143,8 @@ async function propose($: EngineInterface, text: string) {
 }
 
 // One glyph per state, each meaning one thing anywhere in the pane, the run line included; `●` is a label dot. The
-// colours are theme keys, which the theme follows (seen rendering on 2.1.288 and 2.1.312; 2.1.288 types a colour as any string).
+// colours are theme keys, which the theme follows. Seen in theme colours: success, subtle and warning on 2.1.288 and
+// 2.1.312, suggestion on 2.1.312 only; error and merged not yet seen on either. 2.1.288 types a colour as any string.
 const GLYPHS = {
   ready: ['▶', 'success'],
   pass: ['✓', 'success'],
