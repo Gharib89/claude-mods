@@ -46,8 +46,12 @@ async function list(run: Runner, path: string, pick = (body: any): Raw[] => body
     const page = isUnchanged
       ? cached
       : { etag: /^etag: *(.+?)\r?$/im.exec(head)?.[1] ?? '', body: JSON.parse(stdout.slice(end)), next: /<([^>]+)>; *rel="next"/.exec(head)?.[1] }
-    pages.set(url, page)
-    items.push(...pick(page.body))
+    const got = pick(page.body)
+    // A full last page stays uncached, so it is read whole next time: a 304 carries no Link header, and so could not
+    // say that a page was added after it.
+    if (page.next === undefined && got.length >= Number(/[?&]per_page=(\d+)/.exec(url)?.[1] ?? 30)) pages.delete(url)
+    else pages.set(url, page)
+    items.push(...got)
     url = page.next
   }
   return items

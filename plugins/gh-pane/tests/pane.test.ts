@@ -105,7 +105,7 @@ type Host = {
   /** Each PR's check runs; a PR left out has none. */
   ci?: Record<number, ReturnType<typeof checks>>
   checksFail?: string
-  /** How many items one page of a list read holds; every list and check-runs read spans pages of this size. */
+  /** How many items one page of a list read holds, in place of the read's `per_page` (GitHub's default 30 without one). */
   perPage?: number
 }
 
@@ -118,9 +118,10 @@ const etagOf = (body: string) => `W/"${[...body].reduce((h, c) => (h * 31 + c.ch
  * line, CRLF headers with the ETag and, past the first page, a `Link: rel="next"` to the absolute URL of the next
  * page; then a blank line and the body. A matching ETag answers 304 with no Link and no body, exiting 1.
  */
-function page(path: string, items: unknown[], perPage: number, etag: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
+function page(path: string, items: unknown[], size: number | undefined, etag: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
   const [base = path, n = '1'] = path.split(/[?&]page=/)
   const at = Number(n)
+  const perPage = size ?? Number(/[?&]per_page=(\d+)/.exec(base)?.[1] ?? 30)
   const body = JSON.stringify(toPage(items.slice((at - 1) * perPage, at * perPage)))
   const tag = etagOf(body)
   if (etag === tag) return { exitCode: 1, stdout: `HTTP/2.0 304 Not Modified\nEtag: ${tag.slice(2)}\r\n\r\n`, stderr: 'gh: HTTP 304\n' }
@@ -133,7 +134,7 @@ function page(path: string, items: unknown[], perPage: number, etag: string | un
  * number `backlog.failsAt`, fails. `fixture.issues` is what the next read lists, `pulls` which PRs read as merged; `sent`
  * and `ran` are the prompts and the commands the mod submitted or ran, `typed` the prompts a person typed.
  */
-function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail, perPage = 100 }: Host = {}) {
+function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openFails, isSubmitBroken, pullFails, ci = {}, checksFail, perPage }: Host = {}) {
   const calls: string[][] = []
   const fixture = { issues }
   const pulls: Record<number, boolean> = {}
@@ -485,6 +486,19 @@ test('an unchanged second refresh makes the same calls, each conditional on its 
   expect(unchanged.length).toBe(11)
   for (const argv of unchanged) expect(argv).toContainEqual(expect.stringMatching(/^If-None-Match: W\/"[0-9a-f]+"$/))
   expect(await rows()).toEqual(drawn)
+})
+
+test('a full last page answered 304 is read again whole, so a list that grew onto a new page shows the new item', async ($, on) => {
+  // Exactly one page of 100: a 304 carries no Link, so the cached page alone cannot say a page 2 now exists.
+  const { clock, fixture } = host(on, { issues: Array.from({ length: 100 }, (_, i) => issue(i + 1, [])) })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ key: 'row-100' })).toBeDefined()
+  // An old issue reopens onto page 2, leaving page 1 as it was.
+  fixture.issues = [...fixture.issues, issue(101, [])]
+  await ui.press({ key: 'refresh' })
+  await clock.settle()
+  expect(await ui.find({ key: 'row-101' })).toBeDefined()
 })
 
 test('a refresh that would draw what the pane shows writes no state; a new fact or a drawn age that moved writes it', async ($, on) => {
