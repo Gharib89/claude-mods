@@ -52,7 +52,8 @@ let kept: { cwd: string; view: Snapshot } | null = null
 // Which rows are expanded, per repo: the mode, and the rows toggled against it. A module variable for the reason `kept`
 // is one: it outlives the /clear the next button runs.
 const expansion = new Map<string, { all: boolean; flipped: Set<number> }>()
-// The 120 s re-read: a later session.start in this process replaces it rather than stacking a second.
+// The 120 s re-read. Should a timer outlive its session, a later session.start in this process replaces it rather than
+// stacking a second; cancelling one already stopped does nothing.
 let ticking: Timer | undefined
 
 // Black or white ink on a label's hex colour, by perceived brightness.

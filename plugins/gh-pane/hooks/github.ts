@@ -9,10 +9,15 @@ export type Runner = (argv: string[]) => Promise<{ exitCode: number; stdout: str
 
 type Raw = Record<string, any>
 
+/** `owner/repo` from an item's `repository_url`, as GitHub spells it. */
+const repoOf = (url: string) => url.slice(url.lastIndexOf('/repos/') + '/repos/'.length)
+
+const failed = (argv: string[], stderr: string) => new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
+
 /** Runs argv and answers its stdout, throwing on any nonzero exit. */
-async function out(run: Runner, argv: string[]): Promise<string> {
+async function stdoutOf(run: Runner, argv: string[]): Promise<string> {
   const { exitCode, stdout, stderr } = await run(argv)
-  if (exitCode !== 0) throw new Error(`${argv[0]} ${argv[1]}: ${stderr.trim().split('\n')[0]}`)
+  if (exitCode !== 0) throw failed(argv, stderr)
   return stdout
 }
 
@@ -37,13 +42,13 @@ async function list(run: Runner, path: string, pick = (body: any): Raw[] => body
     const end = stdout.search(/\r?\n\r?\n/)
     const head = stdout.slice(0, end)
     const isUnchanged = cached !== undefined && exitCode === 1 && /^HTTP\/\S+ 304/.test(head)
-    if (exitCode !== 0 && !isUnchanged) throw new Error(`gh api: ${stderr.trim().split('\n')[0]}`)
-    const got = isUnchanged
+    if (exitCode !== 0 && !isUnchanged) throw failed(argv, stderr)
+    const page = isUnchanged
       ? cached
       : { etag: /^etag: *(.+?)\r?$/im.exec(head)?.[1] ?? '', body: JSON.parse(stdout.slice(end)), next: /<([^>]+)>; *rel="next"/.exec(head)?.[1] }
-    pages.set(url, got)
-    items.push(...pick(got.body))
-    url = got.next
+    pages.set(url, page)
+    items.push(...pick(page.body))
+    url = page.next
   }
   return items
 }
@@ -61,12 +66,10 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
   // gh fills `{owner}/{repo}` from the checkout's remotes, and with none on a GitHub host fails in its own words.
   const [open, porcelain] = await Promise.all([
     list(run, 'repos/{owner}/{repo}/issues?state=open&per_page=100'),
-    out(run, ['git', 'worktree', 'list', '--porcelain']),
+    stdoutOf(run, ['git', 'worktree', 'list', '--porcelain']),
   ])
   // The canonical name, as GitHub spells it, from any open item; only an empty backlog reads the repo for it.
-  const repo = open.length > 0
-    ? open[0]!.repository_url.slice(open[0]!.repository_url.lastIndexOf('/repos/') + '/repos/'.length)
-    : (await out(run, ['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name'])).trim()
+  const repo = open[0] !== undefined ? repoOf(open[0].repository_url) : (await stdoutOf(run, ['gh', 'api', 'repos/{owner}/{repo}', '--jq', '.full_name'])).trim()
   // The first worktree listed is the main checkout.
   const [main = '', ...paths] = [...porcelain.matchAll(/^worktree (.+)$/gm)].map(m => m[1]!)
   const worktrees = new Map(paths.map(path => [worktreeIssue(layout, main, path), path.slice(path.lastIndexOf('/') + 1)]))
@@ -109,7 +112,7 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
           issue.blockers = blockers
             .filter(b => b.state === 'open')
             .map(b => {
-              const where = b.repository_url.slice(b.repository_url.lastIndexOf('/repos/') + '/repos/'.length)
+              const where = repoOf(b.repository_url)
               return { label: where === repo ? `#${b.number}` : `${where}#${b.number}`, url: b.html_url }
             })
         })),
@@ -133,5 +136,5 @@ export async function readBacklog(run: Runner, layout: string, now: string): Pro
 
 /** Whether PR `n` of the session repo is merged. */
 export async function isMerged(run: Runner, n: number): Promise<boolean> {
-  return (await out(run, ['gh', 'api', `repos/{owner}/{repo}/pulls/${n}`, '--jq', '.merged'])).trim() === 'true'
+  return (await stdoutOf(run, ['gh', 'api', `repos/{owner}/{repo}/pulls/${n}`, '--jq', '.merged'])).trim() === 'true'
 }

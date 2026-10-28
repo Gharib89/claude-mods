@@ -824,12 +824,12 @@ test('a timer tick or a re-read that fails says so in a toast', async ($, on) =>
   expect(toasts).toEqual([expect.stringMatching(/^gh-pane did not refresh: ./), expect.stringMatching(/^gh-pane did not refresh: ./)])
 })
 
-test('a newer read wins over an older one that answers after it', async ($, on) => {
+test('a read asked for during another lands after it: the later answer wins', async ($, on) => {
   const { backlog, clock } = host(on)
   on('tool.call', async () => ({ result: '' }))
   await open($)
-  // Two reads in flight: the older still has the backlog's sub-issues, blockers and claims to read when the newer
-  // fails at its first call and lands.
+  // The second trigger comes while the first read still has the backlog's sub-issues, blockers and claims to read; the
+  // rerun it waits for fails at its first call and lands last.
   backlog.failsAt = 3
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
   await $.tool.call({ tool: 'Bash', command: 'gh api repos/acme/widgets/pulls' })
