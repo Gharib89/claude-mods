@@ -11,8 +11,9 @@ import { isMerged, readBacklog, type Runner } from './github'
 import { ageOf, cellsOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, wrapped } from './rules'
 
 const PANE = 'gh-pane'
-// The dock's width asked for: the engine caps it at 45% of the terminal's columns (the 2.1.312 types), so a width no
-// terminal reaches takes that cap.
+// The dock's width asked for: the engine caps it, at 45% of the terminal's columns by the 2.1.312 types (2.1.288's say
+// only "floor to ceiling"), so a width no terminal reaches takes the cap. On 2.1.312 at 120 columns it docked 53 cells
+// wide, where it docked 49 without the ask.
 const WIDEST = 1000
 const snapshot = atom({ plugin: 'gh-pane', key: 'snapshot' } as const, null)
 const gate = atom({ plugin: 'gh-pane', key: 'gate' } as const, null)
@@ -631,19 +632,26 @@ export const register: Register = (on, options) => {
     // Inline, the frame shows `bodyRows` of the tree: the header says how many lines wait below it.
     const { offset, bodyRows } = e.props.scroll
     const more = e.props.placement === 'inline' && offset === 0 ? drawn - bodyRows : 0
+    const headerColor = stale > 0 ? 'error' : isCapFull ? 'warning' : 'subtle'
 
     return (
       <Box flexDirection="column" width={room}>
         <Box key="header">
-          <Text color={stale > 0 ? 'error' : isCapFull ? 'warning' : 'subtle'} wrap="truncate-end">
-            <Link href={`https://github.com/${view.repo}`} label={view.repo} />
-            {[
-              ` · ${ready} ready · ${view.prs}/${config.prCap} PRs`,
-              running > 0 ? ` · ${running} running` : '',
-              stale > 0 ? ` · ${stale} stale` : '',
-              more > 0 ? ` · ↓ ${more} more` : '',
-            ].join('')}
-          </Text>
+          <Box flexShrink={1}>
+            <Text color={headerColor} wrap="truncate-end">
+              <Link href={`https://github.com/${view.repo}`} label={view.repo} />
+              {[
+                ` · ${ready} ready · ${view.prs}/${config.prCap} PRs`,
+                running > 0 ? ` · ${running} running` : '',
+                stale > 0 ? ` · ${stale} stale` : '',
+              ].join('')}
+            </Text>
+          </Box>
+          {more > 0 && (
+            <Box flexShrink={0}>
+              <Text color={headerColor}>{` · ↓ ${more} more`}</Text>
+            </Box>
+          )}
         </Box>
         <Box gap={1}>
           <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
@@ -666,7 +674,7 @@ export const register: Register = (on, options) => {
         </Box>
         {e.props.isFocused && (
           <Box key="hint">
-            <Text color="subtle">Tab moves · Enter presses · e expands all</Text>
+            <Text color="subtle">{`Tab moves · Enter presses · e ${expanded.all ? 'collapses' : 'expands'} all`}</Text>
           </Box>
         )}
       </Box>

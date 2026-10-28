@@ -968,12 +968,17 @@ test('row actions are framed buttons, ship the primary one; the row toggle and t
   for (const key of ['toggle-27', 'refresh', 'expand']) expect(await look(key)).toEqual([key, true, undefined])
 })
 
-test('the key hint closes the pane only while it holds the keyboard', async ($, on) => {
+test('the key hint draws only while the pane holds the keyboard, and names what e does now', async ($, on) => {
   host(on)
   await open($)
   for (const isFocused of [true, false]) {
     const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
     expect([isFocused, await spans(ui, 'hint')]).toEqual([isFocused, isFocused ? [['Tab moves · Enter presses · e expands all', 'subtle']] : []])
+    if (isFocused) {
+      await ui.press({ key: 'expand' })
+      expect(await spans(ui, 'hint')).toEqual([['Tab moves · Enter presses · e collapses all', 'subtle']])
+      await ui.press({ key: 'expand' })
+    }
     await ui.unmount()
   }
 })
@@ -984,15 +989,16 @@ test('inline, the header counts the lines below the window, expanded titles at t
   await open($)
   const inline = { ...PANE.props, placement: 'inline', bodyColumns: 40, scroll: { offset: 0, bodyRows: 5 } } as const
   const ui = await $.ui.mount({ ...PANE, props: inline, surface: 'terminal' })
-  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · ↓ 6 more')
+  // The count is a Text of its own beside the one the edge truncates, so a narrow pane cuts the counts before it.
+  expect(await spans(ui, 'header')).toEqual([['acme/widgets · 2 ready · 0/3 PRs', 'subtle'], [' · ↓ 6 more', 'subtle']])
   // Expanded at 40 columns, #7's title takes 3 lines and its facts 1.
   await ui.press({ key: 'toggle-7' })
-  expect((await spans(ui, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs · ↓ 10 more')
+  expect((await spans(ui, 'header'))[1]?.[0]).toBe(' · ↓ 10 more')
   await ui.unmount()
 
   for (const props of [{ ...inline, scroll: { offset: 0, bodyRows: 15 } }, { ...inline, scroll: { offset: 3, bodyRows: 5 } }, { ...inline, placement: 'dock' as const }]) {
     const other = await $.ui.mount({ ...PANE, props, surface: 'terminal' })
-    expect((await spans(other, 'header'))[0]?.[0]).toBe('acme/widgets · 2 ready · 0/3 PRs')
+    expect(await spans(other, 'header')).toEqual([['acme/widgets · 2 ready · 0/3 PRs', 'subtle']])
     await other.unmount()
   }
 })
