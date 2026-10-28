@@ -10,7 +10,7 @@ Closes #
 
 ## Special things to note
 
-<!-- First bullet, always: `- Door: <one-way|two-way>. Blast radius: <one clause>.` One-way is a merge nobody can walk back; the blast radius names who else feels it. Then reviewer warnings, migrations, compatibility constraints, deliberate omissions, and any deviation from the plan that would change how the reviewer reads the diff: preferably five or fewer, one sentence each, grouped by the claim they share, with the Door line outside that count, but every material compatibility or operational risk is included. No `None.` form, the Door line is always there; the full deviations log stays in the merge summary. -->
+<!-- First bullet, always: `- 🟢 Door: two-way. Blast radius: <who else feels it>.` or `- 🔴 Door: one-way. Blast radius: <who else feels it>.` One-way is a merge nobody can walk back. Then what the reviewer must know before reading the diff: warnings, migrations, compatibility constraints, deliberate omissions, each adjacent find folded into this PR, and any deviation from the plan that would change how the reviewer reads the diff. Every material compatibility or operational risk is included. No `None.` form, the Door line is always there; the full deviations log stays in the merge summary. -->
 
 ## Needs attention
 

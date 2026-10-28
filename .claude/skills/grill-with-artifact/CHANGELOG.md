@@ -7,6 +7,24 @@ released version. See
 
 <!-- version list -->
 
+## v0.4.3 (2026-10-18)
+
+### Refactoring
+
+- Split every agent-authored file over 5,000 tokens, then gate new ones (#799)
+  ([#848](https://github.com/Gharib89/skills/pull/848),
+  [`0c5b31b`](https://github.com/Gharib89/skills/commit/0c5b31bb4ab1bdb0e156c422e867c2165f6d74d4))
+
+
+## v0.4.2 (2026-10-11)
+
+### Bug Fixes
+
+- Collapse derived copies in PR diffs; trim cloud-ship, drive-session, grill-with-artifact and
+  update-skills ([#569](https://github.com/Gharib89/skills/pull/569),
+  [`fc7f7c9`](https://github.com/Gharib89/skills/commit/fc7f7c90803fe8199ac1c0fff94258562d384ccb))
+
+
 ## v0.4.1 (2026-10-10)
 
 ### Bug Fixes

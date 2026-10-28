@@ -1,6 +1,6 @@
 # Ship profile
 
-Schema: 4
+Schema: 5
 
 Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it.
 
@@ -30,6 +30,8 @@ Push policy: Default.
 `.github/workflows/mods.yml` also runs on push to `main`. `.github/workflows/claude-review.yml` is the Claude reviewer, triggered by `issue_comment`. It lands no check run on the PR head, so it is not a leg. `.github/workflows/latest.yml` validates and tests the mods weekly on the newest Claude Code, triggered by `schedule` and `workflow_dispatch` only; with no `pull_request` trigger it is not a leg either.
 
 ## Reviewers
+
+Self-review cap: 3
 
 ### Claude Code
 

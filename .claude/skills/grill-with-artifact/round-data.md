@@ -44,7 +44,7 @@ page reads and writes nothing outside this table.
 | `round.questions[].options[].id` | string | yes | `a`, `b`, `c`, ... |
 | `round.questions[].options[].title` | string | yes | The choice, short. |
 | `round.questions[].options[].detail` | string | no | One line on what the choice means or costs. |
-| `round.questions[].recommended` | string | yes | The recommended option's `id`. Nothing is preselected. |
+| `round.questions[].recommended` | string | yes | The recommended option's `id`. |
 | `round.questions[].why` | string | yes | Why the recommendation, in one to three sentences. |
 | `round.questions[].figureSvg` | string | no | A figure for this question, as one `<svg>`. |
 | `round.questions[].figureCaption` | string | no | What the figure shows, one or two sentences. |
@@ -100,11 +100,9 @@ One line per form, in this order:
   settled list built from the round document after it: its `settled` and its
   `docsWritten`.
 - A settled entry that a later round's `carriedFrom.id` names shows where it
-  went: back in the open round, or back in an earlier one. Nothing else marks
-  it, so the session never edits an old round.
+  went: back in the open round, or back in an earlier one.
 - An answers document for the open round means that round was submitted: the
   page locks it and waits for the next round document.
-- Drafts live in the viewer's browser storage per round, never in the database.
 
 ## Figure style contract
 

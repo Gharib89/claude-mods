@@ -3,7 +3,7 @@ name: setup-harness
 description: "Set up this repo's agent harness for Claude Code: one check entry point (scripts/check.sh), a pre-commit runner, the linters, formatters, typecheckers and tests it runs, hooks that run them after every edit and at every turn end, vendored language servers proven by a real LSP hover, and a cloud setup that installs them in every Claude Code on the web session, proven in a real one; each third-party tool pinned and passed through an install check. Independent of Ship; run it before /setup-skills. Re-run any time for a gap report that proposes only what is missing, broken or behind, keeping the repo's own additions and standing choices."
 disable-model-invocation: true
 metadata:
-  version: 0.10.4
+  version: 0.13.0
   harness-schema: 3
 ---
 
@@ -55,7 +55,7 @@ On a re-run, the gap report in the layout gap-report.md `## The report` gives, e
 2. **Detection** as detection.md's report lists it.
 3. **Questions**, numbered, each with a recommendation: every new fixture tree and every new candidate root ([reference/detection.md](reference/detection.md)), asking excluded or read, and root or ignored, each with the human's reason, every role with two tools and no caller, a runner choice where more than one config has no shim, the cloud verdict with its evidence, each blocked host a step needs (does the environment's Custom allowlist admit it?), the run recipe Offer where surfaces.md makes one, and each question a catalog `Traps:` line asks (js-ts Playwright Test's `webServer.command`).
 4. **The install-check table**, glue in full after it, then **Found, not installed** with each refusal's reason.
-5. **The writes, as diffs**: runner config additions, the manifest line of each pinned dev dependency (and, on an `unlocked` root, the lockfile its exact dev add writes), each vendored language server plugin with its `enabledPlugins` line, config files a catalog `Constraints:` or `Traps:` line writes, the `scripts/check.sh` configuration block, `.claude/hooks/check-hook.sh`, the cloud setup's `STEPS` block (or the diff to the repo's own cloud script), the `.claude/settings.json` hook entries, `docs/agents/harness.md` and the `CLAUDE.md` block.
+5. **The writes, as diffs**: runner config additions, the manifest line of each pinned dev dependency (and, on an `unlocked` root, the lockfile its exact dev add writes), each vendored language server plugin with its `enabledPlugins` line, config files a catalog `Constraints:` or `Traps:` line writes, the `scripts/check.sh` configuration block, `.claude/hooks/check-hook.sh`, the cloud setup's `STEPS` block (or the diff to the repo's own cloud script), the `.claude/settings.json` hook entries, `docs/agents/harness.md` and the `CLAUDE.md` block (its `LSP` paragraph when a language server is wired).
 
 ### 5. Confirm
 
@@ -73,7 +73,7 @@ In this order, each step's failure stopping the run with its output:
 6. **`.claude/hooks/check-hook.sh`** from [templates/check-hook.sh](templates/check-hook.sh) and the hook entries from [templates/settings-hooks.json](templates/settings-hooks.json), merged beside the repo's own, each `timeout` derived from its budget.
 7. **The cloud setup**, cloud-first only, per [reference/cloud.md](reference/cloud.md) `## Writing the cloud setup`: `.claude/hooks/cloud-setup.sh` from [templates/cloud-setup.sh](templates/cloud-setup.sh) (chained after Ship's cloud bootstrap where an entry runs one), or the repo's own cloud script, when it is not that bootstrap, extended in place, and the `SessionStart` entry from [templates/settings-cloud.json](templates/settings-cloud.json).
 8. **`docs/agents/harness.md`** from [templates/harness-profile.md](templates/harness-profile.md): `Floor:` and `Location:` as written, every budget `default` unless the human gave an override with a reason, `## Cloud` with the confirmed `Verdict:`, `Setup:` (the cloud setup's path, `None.` when local-only), the human's `Allowlist:`, and `Proof:` kept where step 2 found it standing, else `unproven`, `Local-only:` lines (never a language server's), one for each partial need the cloud verdict found, each MCR no, and each catalog `Local-only:` line a wired `FULL_ROWS` tool carries on a cloud-first repo, so every `LOCAL_ONLY` name has the line whose `<part>` is that name; then the `Excluded:`, `Root:` and `Declined:` lines from the confirm step. Then run `scripts/harness-profile-check.sh docs/agents/harness.md` from this skill's directory; a violation is fixed before continuing.
-9. **The `CLAUDE.md` block** from [templates/harness-block.md](templates/harness-block.md), replacing an existing `### Harness` block rather than adding a second.
+9. **The `CLAUDE.md` block** from [templates/harness-block.md](templates/harness-block.md), its `LSP` paragraph only when a language server is wired (by this run or an earlier one), replacing an existing `### Harness` block rather than adding a second.
 
 ### 7. Prove
 
