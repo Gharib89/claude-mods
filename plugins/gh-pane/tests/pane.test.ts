@@ -108,7 +108,7 @@ type Host = {
 function paged(items: unknown[], perPage: number, filter: string | undefined, toPage = (chunk: unknown[]): unknown => chunk) {
   const pages = Array.from({ length: Math.max(1, Math.ceil(items.length / perPage)) }, (_, i) => toPage(items.slice(i * perPage, (i + 1) * perPage)))
   const pick: Record<string, (page: any) => unknown[]> = {
-    '.[]': page => (Array.isArray(page) ? page : Object.values(page)),
+    '.[]': page => page,
     '.check_runs[]': page => page.check_runs,
   }
   if (filter === undefined || !Object.hasOwn(pick, filter)) throw new Error(`the fake gh knows no --jq ${filter}`)
@@ -153,7 +153,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
     const pull = /^repos\/\{owner\}\/\{repo\}\/pulls\/(\d+)$/.exec(rest[0] ?? '')
     if (pull) return pullFails === undefined ? ok(`${pulls[Number(pull[1])] ?? false}\n`) : fail(pullFails)
     const path = rest.find(arg => arg.startsWith('repos/'))!
-    const filter = rest[rest.indexOf('--jq') + 1]
+    const filter = rest.includes('--jq') ? rest[rest.indexOf('--jq') + 1] : undefined
     const events = /issues\/(\d+)\/events/.exec(path)
     if (events) {
       const hours = fixture.issues.find(i => i.number === Number(events[1]))?.claimedHoursAgo as number
@@ -419,7 +419,7 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
   expect(await mark(5)).toEqual(['●', 'yellow'])
   expect(await mark(6)).toBeUndefined()
   // One REST read per PR that closes an open issue, by the PR's head ref; none for #54.
-  const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv[3])
+  const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv.find(arg => arg.startsWith('repos/')))
   expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
 })
 
@@ -662,7 +662,7 @@ test('/gh-pane is immediate, and the pane re-reads after a Bash gh or git push, 
   // Registered immediate, so typed mid-turn it opens or hides the pane at once.
   expect(commands).toEqual([expect.objectContaining({ name: 'gh-pane', immediate: true })])
   await open($)
-  const reads = () => calls.filter(argv => argv[3] === 'repos/acme/widgets/issues?state=open&per_page=100').length
+  const reads = () => calls.filter(argv => argv.includes('repos/acme/widgets/issues?state=open&per_page=100')).length
   expect(reads()).toBe(1)
 
   await $.tool.call({ tool: 'Bash', command: 'ls -la' })

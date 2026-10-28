@@ -9,10 +9,10 @@ export type Runner = (argv: string[]) => Promise<string>
 
 type Raw = Record<string, any>
 
-// `--jq` runs `items` on every page and prints one JSON value per line; `--slurp` would do the same in one array, but
-// needs gh 2.48+. Every path read here answers a list, except check runs: one object per page, its runs in `.check_runs`.
-const list = async (run: Runner, path: string, items = '.[]'): Promise<Raw[]> =>
-  (await run(['gh', 'api', '--paginate', path, '--jq', items])).split('\n').filter(line => line !== '').map(line => JSON.parse(line))
+// `--jq` runs `filter` on every page and prints one JSON value per line; `--slurp` would do the same in one array, but
+// needs gh 2.48+. Every path read here answers a list of objects, except check runs: one object per page, its runs in `.check_runs`.
+const list = async (run: Runner, path: string, filter = '.[]'): Promise<Raw[]> =>
+  (await run(['gh', 'api', '--paginate', path, '--jq', filter])).split('\n').filter(line => line !== '').map(line => JSON.parse(line))
 
 /** Runs `tasks` at most 8 at a time: GitHub's secondary rate limit refuses many concurrent requests. */
 async function inTurn(tasks: (() => Promise<void>)[]) {
