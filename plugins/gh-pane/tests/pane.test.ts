@@ -79,6 +79,8 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/4/sub_issues?per_page=100': [linked(6, 'open'), linked(7, 'open'), linked(8, 'open'), linked(9, 'open')],
   'repos/acme/widgets/issues/9/dependencies/blocked_by': [linked(6, 'open')],
   'repos/acme/widgets/issues/3/dependencies/blocked_by': [linked(9, 'open')],
+  // The order test's tree: its sub-issues in the parent's order, newest first.
+  'repos/acme/widgets/issues/60/sub_issues?per_page=100': [linked(62, 'open'), linked(61, 'open')],
 }
 
 const PORCELAIN = [
@@ -296,6 +298,27 @@ test('the pane orders the backlog and each button fills its command', async ($, 
   }
 })
 
+test('the pane draws oldest first: roots and each waiting group by number, sub-issues in their parent\'s order', async ($, on) => {
+  // Newest first, as GitHub lists open issues.
+  host(on, {
+    issues: [
+      issue(62, ['ready-for-agent']),
+      issue(61, ['ready-for-agent']),
+      issue(60, [], { sub_issues_summary: { total: 2, completed: 0 } }),
+      issue(55, ['needs-triage']),
+      issue(54, ['needs-triage']),
+      issue(53, ['needs-info']),
+      issue(52, ['needs-info']),
+      issue(51, ['ready-for-agent']),
+      issue(50, ['ready-for-agent']),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const rows = (await ui.findAll({ type: 'Box' })).flatMap(box => /^row-(\d+)$/.exec(box.key ?? '')?.[1] ?? []).map(Number)
+  expect(rows).toEqual([50, 51, 60, 62, 61, 54, 55, 52, 53])
+})
+
 test('the pane follows a non-default userConfig', {
   options: {
     readyForAgentLabel: 'go',
@@ -398,6 +421,20 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
   // One REST read per PR that closes an open issue, by the PR's head ref; none for #54.
   const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv[3])
   expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
+})
+
+test('every list and check-runs read arrives whole when it spans several pages', async ($, on) => {
+  // One item a page: each fact below sits on a page after the first.
+  host(on, { perPage: 1, ci: { 31: checks(['completed', 'success'], ['completed', 'failure']) } })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  // The backlog's last issue, #20's third sub-issue, #25's third blocker, #35's assignment event and #31's second run.
+  expect(await ui.find({ key: 'row-41' })).toBeDefined()
+  expect(await ui.find({ type: 'Link', text: '#29' })).toBeDefined()
+  expect(await ui.find({ text: /^blocked by #24, acme\/infra#5$/ })).toBeDefined()
+  expect(await ui.find({ key: 'release-35' })).toBeDefined()
+  const row = await spans(ui, 'row-36')
+  expect(row[row.findIndex(([text]) => text.startsWith('in PR')) + 1]).toEqual(['✗', 'red'])
 })
 
 test('a failed check-runs read fails the refresh, as any failed read does', async ($, on) => {
@@ -842,7 +879,8 @@ test('a merged PR shows the next button for the first ready row, and pressing it
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await answer($, GATE)
   await type($, 'merge')
-  // Pane closed: the next command still comes from a fresh read, which sees #8 become ready since the gate.
+  // Pane closed: the next command still comes from a fresh read, which sees #7 and #8 become ready since the gate,
+  // listed newest first as GitHub answers; the oldest is next.
   panes.isOpen = false
   fixture.issues = [issue(9, ['needs-triage']), issue(8, ['ready-for-agent']), issue(7, ['ready-for-agent'])]
   pulls[42] = true
@@ -850,13 +888,13 @@ test('a merged PR shows the next button for the first ready row, and pressing it
   await clock.settle()
 
   const next = await band.find({ key: 'next' })
-  expect(next?.props.label).toBe('clear + /ship 8')
+  expect(next?.props.label).toBe('clear + /ship 7')
   expect(next?.props.hotkey).toBe('n')
   expect(calls).toContainEqual(['gh', 'api', 'repos/{owner}/{repo}/pulls/42', '--jq', '.merged'])
   expect(await band.find({ text: /merging/ })).toBeUndefined()
 
   await band.press({ key: 'next' })
-  expect(ran).toEqual([{ command: 'clear', args: '' }, { command: 'ship', args: '8' }])
+  expect(ran).toEqual([{ command: 'clear', args: '' }, { command: 'ship', args: '7' }])
   expect(await band.find({ key: 'next' })).toBeUndefined()
 })
 

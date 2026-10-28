@@ -152,7 +152,8 @@ function arrange(view: Open, config: Config) {
     has(issue, config.mapLabel) ? issue.number : issue.parent === undefined ? undefined : mapOf(byNumber.get(issue.parent)!)
   const isMapTicket = (issue: Issue) => mapOf(issue) !== undefined && !has(issue, config.mapLabel)
   // A spec tree draws in place whatever its root's label; a lone issue waiting on triage or info waits below.
-  const top = view.issues.filter(issue => issue.parent === undefined)
+  // Oldest first, as ship selects; GitHub lists newest first. Sub-issues keep their parent's order.
+  const top = view.issues.filter(issue => issue.parent === undefined).sort((a, b) => a.number - b.number)
   const isWaiting = (issue: Issue, label: string) => issue.subs.total === 0 && has(issue, label)
   const roots = top.filter(issue => !isWaiting(issue, config.needsTriage) && !isWaiting(issue, config.needsInfo))
   const waiting = [
