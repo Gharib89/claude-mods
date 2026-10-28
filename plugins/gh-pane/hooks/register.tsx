@@ -505,6 +505,7 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         </Box>,
+        // The title on lines of its own: wrapped inside the first line's row, it wrapped the prefix and tag too (2.1.296).
         isExpanded &&
           lined(
             `title-${issue.number}`,
