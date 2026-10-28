@@ -11,14 +11,37 @@ export type RunLine = { text: string; isStale: boolean }
  */
 export function runLine(run: { claimedAt?: string; now: string; hasPr: boolean; expectsPr?: boolean; worktree?: string }): RunLine | null {
   const hours = run.claimedAt === undefined ? undefined : (Date.parse(run.now) - Date.parse(run.claimedAt)) / 3_600_000
-  const age = hours === undefined ? '' : hours < 24 ? ` ${Math.floor(hours)}h ago` : ` ${Math.floor(hours / 24)}d ago`
+  const age = run.claimedAt === undefined ? '' : ` ${ageOf(run.now, run.claimedAt)}`
   const expectsPr = run.expectsPr ?? true
   if (expectsPr && !run.hasPr && hours !== undefined && hours > STALE_HOURS) {
-    return { text: `✗ stale claim: claimed${age}, no PR`, isStale: true }
+    return { text: `! stale claim: claimed${age}, no PR`, isStale: true }
   }
   if (run.worktree !== undefined) return { text: `◐ ship worktree ${run.worktree}`, isStale: false }
   if (run.hasPr) return null
   return { text: `◐ claimed${age}${expectsPr ? ', no PR yet' : ''}`, isStale: false }
+}
+
+/** How long ago `then` was at `now`, in the one wording the pane draws: `just now` under an hour, `Nh ago`, `Nd ago`. */
+export function ageOf(now: string, then: string): string {
+  const hours = (Date.parse(now) - Date.parse(then)) / 3_600_000
+  return hours < 1 ? 'just now' : hours < 24 ? `${Math.floor(hours)}h ago` : `${Math.floor(hours / 24)}d ago`
+}
+
+/** `items` in lines of at most `room` columns, one column between items; an item wider than `room` takes a line alone. */
+export function pack<T>(items: T[], room: number, width: (item: T) => number): T[][] {
+  const lines: T[][] = []
+  let used = 0
+  for (const item of items) {
+    const line = lines.at(-1)
+    if (line !== undefined && used + 1 + width(item) <= room) {
+      line.push(item)
+      used += 1 + width(item)
+    } else {
+      lines.push([item])
+      used = width(item)
+    }
+  }
+  return lines
 }
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

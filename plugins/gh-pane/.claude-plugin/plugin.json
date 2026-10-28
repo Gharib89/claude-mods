@@ -1,6 +1,6 @@
 {
   "name": "gh-pane",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "A docked pane of the session repo's issues and PRs in run order, each row with its labels in their colours, a toggle that expands it to its full title, label chips and facts, and a CI mark on its PR, with buttons that fill the next command, plus two for this session's ship runs: send the merge reply at the merge gate, then, once the PR is merged there or by ship on its own, clear and run the next command.",
   "author": { "name": "Ahmed Gharib", "url": "https://github.com/Gharib89" },
   "types": "./types/index.d.ts",

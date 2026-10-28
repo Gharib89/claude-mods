@@ -86,6 +86,12 @@ const API: Record<string, unknown[]> = {
   'repos/acme/widgets/issues/3/dependencies/blocked_by': [linked(9, 'open')],
   // The order test's tree: its sub-issues in the parent's order, newest first.
   'repos/acme/widgets/issues/60/sub_issues?per_page=100': [linked(62, 'open'), linked(61, 'open')],
+  // The glyph, blocker and rail tests' trees.
+  'repos/acme/widgets/issues/72/sub_issues?per_page=100': [linked(73, 'open')],
+  'repos/acme/widgets/issues/79/dependencies/blocked_by': [linked(70, 'open')],
+  'repos/acme/widgets/issues/90/dependencies/blocked_by': [linked(70, 'open'), linked(71, 'open'), linked(5, 'open', 'acme/infra'), linked(84, 'open')],
+  'repos/acme/widgets/issues/91/sub_issues?per_page=100': [linked(92, 'open'), linked(93, 'open')],
+  'repos/acme/widgets/issues/92/dependencies/blocked_by': [linked(93, 'open'), linked(5, 'open', 'acme/infra')],
 }
 
 const PORCELAIN = [
@@ -242,7 +248,7 @@ function host(on: On, { issues = BACKLOG, ghFails, ghMissing, isOffGitHub, openF
   return { calls, unchanged, filled, clock, panes, backlog, toasts, opened, closed, folder, fixture, pulls, sent, typed, ran }
 }
 
-type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find'>
+type Mounted = Pick<Awaited<ReturnType<Engine['ui']['mount']>>, 'find' | 'findAll'>
 type Drawn = { type: string; props: Record<string, unknown>; children?: unknown[] }
 const textOf = (node: unknown): string =>
   typeof node === 'string' ? node : (node as Drawn).type === 'Link' ? String((node as Drawn).props.label) : ((node as Drawn).children ?? []).map(textOf).join('')
@@ -259,6 +265,21 @@ async function spans(ui: Mounted, key: string): Promise<[string, string][]> {
   return found === undefined ? [] : walk(found)
 }
 
+/** A collapsed row's state glyph and its colour: the span after the rail. */
+const glyph = async (ui: Mounted, n: number) => (await spans(ui, `row-${n}`))[1]
+/** A row's short tail and its colour: the row's last span. */
+const tail = async (ui: Mounted, n: number) => (await spans(ui, `row-${n}`)).at(-1)
+/** The labels of the Links the element keyed `key` draws, in order. */
+async function links(ui: Mounted, key: string): Promise<string[]> {
+  const walk = (node: unknown): string[] =>
+    typeof node === 'string' ? [] : (node as Drawn).type === 'Link' ? [String((node as Drawn).props.label)] : ((node as Drawn).children ?? []).flatMap(walk)
+  const found = await ui.find({ key })
+  return found === undefined ? [] : walk(found)
+}
+/** The keys of the line Boxes an expanded part (`title-7`, `chips-7`) draws, one per wrapped line. */
+const linesOf = async (ui: Mounted, part: string) =>
+  (await ui.findAll({ type: 'Box' })).flatMap(box => (box.key?.startsWith(`${part}:`) ? [box.key] : []))
+
 const open = ($: Engine) =>
   $.command.run({ command: 'gh-pane', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 200 } })
 
@@ -271,21 +292,30 @@ test('the pane orders the backlog and each button fills its command', async ($, 
     const ui = await $.ui.mount({ ...PANE, surface })
 
     expect(await ui.find({ text: 'PR cap 1/3 · ready now: 1 · runs: 2 active · 2 stale' })).toBeDefined()
-    expect(await ui.find({ text: '1/4' })).toBeDefined()
     // A tree's root reads `•`, as a lone row does: `▾` means expanded.
     expect((await spans(ui, 'row-20'))[0]).toEqual(['•', ''])
-    expect(await ui.find({ text: /✓ 1 done/ })).toBeDefined()
-    expect(await ui.find({ text: /^blocked by #24, acme\/infra#5$/ })).toBeDefined()
+    // A parent labelled ready-for-human reads yours, not spec.
+    expect(await tail(ui, 20)).toEqual(['yours', 'merged'])
+    // The done line carries no glyph: `✓` means a passing PR.
+    expect(await ui.find({ text: /├ 1 done$/ })).toBeDefined()
+    expect(await ui.find({ text: /✓ 1 done/ })).toBeUndefined()
+    expect(await tail(ui, 25)).toEqual(['by 2', 'warning'])
+    await ui.press({ key: 'toggle-25' })
+    expect(await links(ui, 'blocked-25')).toEqual(['#24', 'acme/infra#5'])
     expect((await ui.find({ type: 'Link', text: 'acme/infra#5' }))?.props.href).toBe('https://github.com/acme/infra/issues/5')
-    expect(await ui.find({ text: 'in PR #31' })).toBeDefined()
-    expect(await ui.find({ text: 'claimed (ann)' })).toBeDefined()
-    expect(await ui.find({ text: 'yours' })).toBeDefined()
+    await ui.press({ key: 'toggle-25' })
+    expect(await tail(ui, 36)).toEqual(['PR #31', 'subtle'])
+    expect(await tail(ui, 24)).toEqual(['ann', 'suggestion'])
+    // A waiting group's heading names its state, so its rows do not: #32 ends on its title.
+    expect(await tail(ui, 32)).toEqual(['issue 32', ''])
+    // #19 waits on info under a stale claim.
+    expect(await glyph(ui, 19)).toEqual(['!', 'error'])
     expect((await ui.find({ type: 'Link', text: '#24' }))?.props.href).toBe('https://github.com/acme/widgets/issues/24')
     expect((await ui.find({ type: 'Link', text: '#31' }))?.props.href).toBe('https://github.com/acme/widgets/pull/31')
 
     expect(await ui.find({ text: /◐ claimed 5h ago, no PR yet/ })).toBeDefined()
     expect(await ui.find({ text: /◐ ship worktree resume-22/ })).toBeDefined()
-    expect(await ui.find({ text: /✗ stale claim: claimed 3d ago, no PR/ })).toBeDefined()
+    expect(await ui.find({ text: /! stale claim: claimed 3d ago, no PR/ })).toBeDefined()
     // Not stale: under a day (#24, #22), or a PR closes it (#36).
     for (const n of [24, 22, 36]) expect(await ui.find({ key: `release-${n}` })).toBeUndefined()
     expect(await ui.find({ key: 'ship-24' })).toBeUndefined()
@@ -410,7 +440,7 @@ test("a collapsed row shows one dot per label in the label's colour, the state l
   expect(await dots(8)).toEqual([])
 })
 
-test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, nothing with no runs', async ($, on) => {
+test("an in PR row's glyph is its check runs: ✓ passed, ✗ failed, ◌ running, ○ none", async ($, on) => {
   const pr = (n: number, closes: string) => ({ ...issue(n, []), pull_request: {}, html_url: `https://github.com/acme/widgets/pull/${n}`, body: closes })
   const { calls } = host(on, {
     issues: [
@@ -434,16 +464,12 @@ test('an in PR tag carries its check runs: ✓ green, ✗ red, ● running, noth
   })
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  // What follows the row's tag.
-  const mark = async (n: number) => {
-    const row = await spans(ui, `row-${n}`)
-    return row[row.findIndex(([text]) => text.startsWith('in PR')) + 1]
-  }
-  expect(await mark(3)).toEqual(['✓', 'green'])
-  expect(await mark(7)).toEqual(['✓', 'green'])
-  expect(await mark(4)).toEqual(['✗', 'red'])
-  expect(await mark(5)).toEqual(['●', 'yellow'])
-  expect(await mark(6)).toBeUndefined()
+  expect(await glyph(ui, 3)).toEqual(['✓', 'success'])
+  expect(await glyph(ui, 7)).toEqual(['✓', 'success'])
+  expect(await glyph(ui, 4)).toEqual(['✗', 'error'])
+  expect(await glyph(ui, 5)).toEqual(['◌', 'warning'])
+  expect(await glyph(ui, 6)).toEqual(['○', 'subtle'])
+  expect(await tail(ui, 4)).toEqual(['PR #51', 'error'])
   // One REST read per PR that closes an open issue, by the PR's head ref; none for #54.
   const reads = calls.filter(argv => argv.join(' ').includes('/check-runs')).map(argv => argv.find(arg => arg.startsWith('repos/')))
   expect(reads.sort()).toEqual([checksOf(50), checksOf(51), checksOf(52), checksOf(53)])
@@ -457,10 +483,10 @@ test('every list and check-runs read arrives whole when it spans several pages',
   // The backlog's last issue, #20's third sub-issue, #25's third blocker, #35's assignment event and #31's second run.
   expect(await ui.find({ key: 'row-41' })).toBeDefined()
   expect(await ui.find({ type: 'Link', text: '#29' })).toBeDefined()
-  expect(await ui.find({ text: /^blocked by #24, acme\/infra#5$/ })).toBeDefined()
+  await ui.press({ key: 'toggle-25' })
+  expect(await links(ui, 'blocked-25')).toEqual(['#24', 'acme/infra#5'])
   expect(await ui.find({ key: 'release-35' })).toBeDefined()
-  const row = await spans(ui, 'row-36')
-  expect(row[row.findIndex(([text]) => text.startsWith('in PR')) + 1]).toEqual(['✗', 'red'])
+  expect(await glyph(ui, 36)).toEqual(['✗', 'error'])
 })
 
 test('an unchanged second refresh makes the same calls, each conditional on its ETag and answered 304, and draws the same rows', async ($, on) => {
@@ -562,9 +588,9 @@ test('a row toggle expands that row alone: its title, run line, chips and facts,
   expect(await boxes(7)).toEqual(['row-7', 'title-7', 'run-7', 'chips-7', 'facts-7'])
   expect(await ui.find({ key: 'title-8' })).toBeUndefined()
   // The first line keeps the number, tag and buttons; the whole title and the chips move below it.
-  expect((await spans(ui, 'row-7')).map(([text]) => text)).toEqual(['•', '#7', 'claimed (ann)'])
+  expect((await spans(ui, 'row-7')).map(([text]) => text)).toEqual(['•', '◐', '#7', 'ann'])
   expect((await spans(ui, 'title-7')).at(-1)).toEqual([LONG, ''])
-  expect((await spans(ui, 'run-7')).at(-1)).toEqual(['◐ claimed 5h ago, no PR yet', 'cyan'])
+  expect((await spans(ui, 'run-7')).at(-1)).toEqual(['◐ claimed 5h ago, no PR yet', 'suggestion'])
   // Each chip on its label's colour, its ink black or white by the colour's brightness.
   expect((await spans(ui, 'chips-7')).filter(([, color]) => color.includes(' on '))).toEqual([
     [' bug ', '#ffffff on #d73a4a'],
@@ -576,7 +602,8 @@ test('a row toggle expands that row alone: its title, run line, chips and facts,
   expect((await spans(ui, 'facts-7')).at(-1)?.[0]).toBe('updated 3h ago · 2 comments · v1')
 
   await ui.press({ key: 'toggle-8' })
-  expect(await ui.find({ text: '██░░░░░░ 1/4' })).toBeDefined()
+  expect(await ui.find({ text: '██░░░░░░' })).toBeDefined()
+  expect(await tail(ui, 8)).toEqual(['spec 1/4', 'subtle'])
   await ui.press({ key: 'toggle-7' })
   expect(await toggle(7)).toBe('▸')
   expect(await boxes(7)).toEqual(['row-7', 'run-7'])
@@ -651,23 +678,15 @@ test('a snapshot from before CI marks, still in the session state, draws as no s
   expect(await ui.find({ key: 'row-24' })).toBeDefined()
 })
 
-test('at 55 columns a collapsed title takes what its measured tail leaves', async ($, on) => {
-  host(on, {
-    issues: [
-      issue(7, ['ready-for-human'], { title: LONG }),
-      issue(8, ['ready-for-agent'], { title: LONG }),
-      issue(9, ['ready-for-human', 'bug', 'XL'], { title: LONG }),
-    ],
-  })
+test('a collapsed title is whole, in a growing Box, and the engine truncates it at the edge', async ($, on) => {
+  host(on, { issues: [issue(7, ['ready-for-human', 'bug'], { title: LONG })] })
   await open($)
-  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 55 }, surface: 'terminal' })
-  const title = async (n: number) => (await spans(ui, `row-${n}`))[1]![0].slice(`#${n} `.length)
-  const yours = await title(7)
-  expect(yours.endsWith('…')).toBe(true)
-  expect(yours.length).toBeGreaterThanOrEqual(35)
-  // `ready now` is 4 columns wider than `yours`, and the ship button takes 5; two dots take 3.
-  expect((await title(8)).length).toBe(yours.length - 9)
-  expect((await title(9)).length).toBe(yours.length - 3)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 49 }, surface: 'terminal' })
+  const [title] = (await ui.findAll({ type: 'Text' })).filter(text => text.props.wrap === 'truncate-end')
+  expect(title?.props.children ?? textOf(title)).toBe(LONG)
+  const holder = (await ui.findAll({ type: 'Box' })).find(box => box.props.flexGrow === 1)
+  expect(holder).toBeDefined()
+  expect(textOf(holder)).toBe(LONG)
 })
 
 test('a map lists its tickets by state, never as untriaged, and its next button fills the map command', async ($, on) => {
@@ -688,7 +707,7 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   // Ready now counts the next rows: #7 and #11.
   expect(await ui.find({ text: 'PR cap 0/3 · ready now: 2 · runs: 3 active · 0 stale' })).toBeDefined()
   expect(await ui.find({ text: /untriaged/ })).toBeUndefined()
-  expect(await ui.find({ text: /^blocked by #6$/ })).toBeDefined()
+  expect(await tail(ui, 9)).toEqual(['by #6', 'warning'])
   // A map ticket resolves by a closing comment, not a PR: an old claim is not stale.
   expect(await ui.find({ text: /◐ claimed 3d ago$/ })).toBeDefined()
   for (const n of [4, 6, 10]) expect(await ui.find({ key: `release-${n}` })).toBeUndefined()
@@ -699,6 +718,130 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   await ui.press({ key: 'next-7' })
   await ui.press({ key: 'next-11' })
   expect(filled).toEqual(['/wayfinder 4 7', '/wayfinder 4 11'])
+})
+
+test('each state draws one glyph in its theme colour, and no glyph means two things anywhere in the pane', async ($, on) => {
+  const pr = (n: number, closes: string) => ({ ...issue(n, []), pull_request: {}, html_url: `https://github.com/acme/widgets/pull/${n}`, body: closes })
+  host(on, {
+    issues: [
+      issue(70, ['ready-for-agent']),
+      issue(72, ['wayfinder:map'], { sub_issues_summary: { total: 1, completed: 0 } }),
+      issue(73, []),
+      issue(74, []),
+      issue(75, []),
+      issue(76, []),
+      issue(77, []),
+      issue(78, [], { sub_issues_summary: { total: 2, completed: 2 } }),
+      issue(79, [], { issue_dependencies_summary: { blocked_by: 1 } }),
+      issue(80, [], assigned('ann', 5)),
+      issue(81, [], assigned('bob', 72)),
+      issue(82, ['ready-for-human']),
+      issue(83, ['bug'], { sub_issues_summary: { total: 2, completed: 1 } }),
+      issue(84, []),
+      issue(85, ['needs-triage']),
+      issue(86, ['needs-info']),
+      pr(54, 'Closes #74'),
+      pr(55, 'Closes #75'),
+      pr(56, 'Closes #76'),
+      pr(57, 'Closes #77'),
+    ],
+    ci: { 54: checks(['completed', 'success']), 55: checks(['completed', 'failure']), 56: checks(['in_progress', null]) },
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const table: [number, string, string][] = [
+    [70, '▶', 'success'], // ready now
+    [73, '▶', 'success'], // a map ticket's next
+    [74, '✓', 'success'], // in PR, CI passed
+    [75, '✗', 'error'], // in PR, CI failed
+    [76, '◌', 'warning'], // in PR, CI running
+    [77, '○', 'subtle'], // in PR, no runs
+    [78, '◆', 'success'], // all done
+    [79, '⊘', 'warning'], // blocked
+    [80, '◐', 'suggestion'], // claimed
+    [81, '!', 'error'], // stale claim
+    [82, '◇', 'merged'], // yours
+    [72, '·', 'subtle'], // map
+    [83, '·', 'subtle'], // spec
+    [84, '·', 'subtle'], // untriaged
+    [85, '·', 'subtle'], // needs triage
+    [86, '·', 'subtle'], // needs info
+  ]
+  for (const [n, mark, color] of table) expect([n, ...((await glyph(ui, n)) ?? [])]).toEqual([n, mark, color])
+  // Every Text the pane draws that opens on a glyph, run lines included, draws it in that glyph's one colour; `●` is a label dot.
+  const colorOf = new Map(table.map(([, mark, color]) => [mark, color]))
+  for (const text of await ui.findAll({ type: 'Text' })) {
+    const shown = textOf(text).trimStart()
+    const mark = [...colorOf.keys()].find(m => m !== '·' && shown.startsWith(m))
+    if (mark !== undefined) expect([shown, text.props.color]).toEqual([shown, colorOf.get(mark)])
+    const isLeaf = !((text as Drawn).children ?? []).some(child => (child as Drawn).type === 'Text')
+    if (isLeaf && shown.includes('●')) expect([shown, text.props.color]).toEqual(['●', expect.stringMatching(/^#/)])
+  }
+  expect(await ui.find({ text: /^! stale claim/ })).toBeDefined()
+  expect(await tail(ui, 83)).toEqual(['spec 1/2', 'subtle'])
+  expect(await tail(ui, 84)).toEqual(['untriaged', 'subtle'])
+  expect(await tail(ui, 72)).toEqual(['map', 'subtle'])
+  expect(await tail(ui, 80)).toEqual(['ann', 'suggestion'])
+  expect(await tail(ui, 76)).toEqual(['PR #56', 'warning'])
+})
+
+test('a blocked row reads by #N for one blocker and by N for several, on its one line; expanded, it lists every blocker', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(70, ['ready-for-agent']),
+      issue(71, ['ready-for-agent']),
+      issue(79, [], { issue_dependencies_summary: { blocked_by: 1 } }),
+      issue(84, []),
+      issue(90, ['bug'], { issue_dependencies_summary: { blocked_by: 4 } }),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 49 }, surface: 'terminal' })
+  expect(await tail(ui, 79)).toEqual(['by #70', 'warning'])
+  expect(await links(ui, 'row-79')).toEqual(['#79', '#70'])
+  expect(await tail(ui, 90)).toEqual(['by 4', 'warning'])
+  expect(await links(ui, 'row-90')).toEqual(['#90'])
+  expect(await ui.find({ key: 'blocked-90' })).toBeUndefined()
+
+  await ui.press({ key: 'toggle-90' })
+  expect(await tail(ui, 90)).toEqual(['by 4', 'warning'])
+  expect(await links(ui, 'blocked-90')).toEqual(['#70', '#71', 'acme/infra#5', '#84'])
+  const boxes = (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => /^\w+-90$/.test(key ?? ''))
+  expect(boxes).toEqual(['row-90', 'title-90', 'blocked-90', 'chips-90', 'facts-90'])
+})
+
+test('an expanded row wraps its title, blockers, chips and facts onto lines that each draw the rail', async ($, on) => {
+  host(on, {
+    issues: [
+      issue(91, [], { sub_issues_summary: { total: 2, completed: 0 } }),
+      issue(92, ['bug', 'docs', 'wontfix', 'XL'], { title: LONG, issue_dependencies_summary: { blocked_by: 2 }, ...assigned('ann', 5), milestone: { title: 'v1' } }),
+      issue(93, []),
+    ],
+  })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 30 }, surface: 'terminal' })
+  await ui.press({ key: 'toggle-92' })
+  // #92 is the first of two children: its rail is the tree's `│`.
+  const rail = '  │   '
+  const text = async (key: string) => (await spans(ui, key)).slice(1).map(([shown]) => shown).join(' ')
+  for (const part of ['title-92', 'blocked-92', 'chips-92', 'facts-92']) {
+    const lines = await linesOf(ui, part)
+    expect([part, lines.length > 1]).toEqual([part, true])
+    for (const key of lines) expect([key, (await spans(ui, key))[0]]).toEqual([key, [rail, '']])
+  }
+  const title = await linesOf(ui, 'title-92')
+  expect((await Promise.all(title.map(text))).join(' ')).toBe(LONG)
+  for (const key of title) expect((await text(key)).length).toBeLessThanOrEqual(30 - rail.length - 1)
+  expect(await links(ui, 'blocked-92')).toEqual(['#93', 'acme/infra#5'])
+})
+
+test('a claim and an update under an hour old read just now', async ($, on) => {
+  host(on, { issues: [issue(95, [], { ...assigned('ann', 0.2), updated_at: ago(0.5) })] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await spans(ui, 'run-95')).at(-1)).toEqual(['◐ claimed just now, no PR yet', 'suggestion'])
+  await ui.press({ key: 'toggle-95' })
+  expect((await spans(ui, 'facts-95')).at(-1)?.[0]).toBe('updated just now · 0 comments')
 })
 
 test('an empty repo says so, with no fixture data, naming the repo from the one lookup it makes', async ($, on) => {
@@ -1220,7 +1363,8 @@ for (const [name, options, request] of [
     })
     await open($)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    expect(await ui.find({ text: 'all done' })).toBeDefined()
+    expect(await glyph(ui, 3)).toEqual(['◆', 'success'])
+    expect(await tail(ui, 3)).toEqual(['2/2', 'success'])
     expect(await ui.find({ key: 'close-5' })).toBeUndefined()
     await ui.press({ key: 'close-3' })
     expect(filled).toEqual([request])
@@ -1252,11 +1396,11 @@ test('all done ranks after in PR and before blocked, claimed and ready', async (
   // #3 is blocked, claimed and ready, and still all done; #4 has a PR, so it reads in PR with no close button.
   expect(await ui.find({ key: 'close-3' })).toBeDefined()
   expect(await ui.find({ key: 'ship-3' })).toBeUndefined()
-  expect(await ui.find({ text: 'in PR #31' })).toBeDefined()
+  expect(await tail(ui, 4)).toEqual(['PR #31', 'subtle'])
   expect(await ui.find({ key: 'close-4' })).toBeUndefined()
 })
 
-test('a map ticket row reads ready now beside its next button, never next next', async ($, on) => {
+test('a map ticket row draws ▶ beside its next button, with no state word', async ($, on) => {
   host(on, {
     issues: [
       issue(4, ['wayfinder:map'], { sub_issues_summary: { total: 1, completed: 0 } }),
@@ -1266,8 +1410,9 @@ test('a map ticket row reads ready now beside its next button, never next next',
   await open($)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ key: 'next-7' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'next' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: 'ready now' })).toBeDefined()
+  expect(await glyph(ui, 7)).toEqual(['▶', 'success'])
+  // The rail, the glyph, the number, the title and the one label dot: no state word.
+  expect((await spans(ui, 'row-7')).map(([text]) => text)).toEqual(['  └', '▶', '#7', 'issue 7', '●'])
 })
 
 test('the gate and merge words follow userConfig', { options: { gateText: 'Say go', mergeReply: 'go' } }, async ($, on) => {

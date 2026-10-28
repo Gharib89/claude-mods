@@ -1,13 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
-import { closesOf, commandOf, fill, gatePr, mergedPrOf, runLine, worktreeIssue } from '../hooks/rules'
+import { ageOf, closesOf, commandOf, fill, gatePr, mergedPrOf, pack, runLine, worktreeIssue } from '../hooks/rules'
 
 const NOW = '2026-10-04T12:00:00Z'
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString()
 
 test('a claim older than 24 h with no PR is stale', () => {
   expect(runLine({ claimedAt: hoursAgo(72), now: NOW, hasPr: false })).toEqual({
-    text: '✗ stale claim: claimed 3d ago, no PR',
+    text: '! stale claim: claimed 3d ago, no PR',
     isStale: true,
   })
   // Staleness wins over a worktree: the run that made it is gone.
@@ -30,6 +30,27 @@ test('a claim under 24 h is not stale', () => {
   expect(runLine({ claimedAt: hoursAgo(24), now: NOW, hasPr: false })?.isStale).toBe(false)
   // No assigned event read: the age is unknown, never stale.
   expect(runLine({ now: NOW, hasPr: false })).toEqual({ text: '◐ claimed, no PR yet', isStale: false })
+})
+
+test('one age wording: just now under an hour, then hours under a day, then days', () => {
+  expect(ageOf(NOW, hoursAgo(0))).toBe('just now')
+  expect(ageOf(NOW, hoursAgo(59 / 60))).toBe('just now')
+  expect(ageOf(NOW, hoursAgo(1))).toBe('1h ago')
+  expect(ageOf(NOW, hoursAgo(23.9))).toBe('23h ago')
+  expect(ageOf(NOW, hoursAgo(24))).toBe('1d ago')
+  expect(ageOf(NOW, hoursAgo(72))).toBe('3d ago')
+})
+
+test('a claim under an hour reads just now, never 0h ago', () => {
+  expect(runLine({ claimedAt: hoursAgo(0.2), now: NOW, hasPr: false })).toEqual({ text: '◐ claimed just now, no PR yet', isStale: false })
+})
+
+test('pack fills lines up to the room, one column between items, and gives an item too wide a line alone', () => {
+  const words = (text: string, room: number) => pack(text.split(' '), room, word => word.length).map(line => line.join(' '))
+  expect(words('aa bb cc dd', 5)).toEqual(['aa bb', 'cc dd'])
+  expect(words('aa bb cc', 8)).toEqual(['aa bb cc'])
+  expect(words('aa bbbbbbbbbb cc', 5)).toEqual(['aa', 'bbbbbbbbbb', 'cc'])
+  expect(pack([], 5, () => 1)).toEqual([])
 })
 
 test('a matching worktree names the run', () => {
