@@ -7,7 +7,7 @@ name: Claude PR Review
 # keeps this workflow off the PR head, so it lands no check run and is not a
 # CI leg.
 on:
-  issue_comment:
+  issue_comment: # zizmor: ignore[dangerous-triggers] PR-author gated; comment body never reaches the prompt
     types: [created]
 
 permissions:
