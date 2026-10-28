@@ -472,10 +472,10 @@ export const register: Register = (on, options) => {
         `${issue.comments} comment${issue.comments === 1 ? '' : 's'}`,
         ...(issue.milestone ? [issue.milestone] : []),
       ]
-      // The row's buttons, each named by its label: what it fills in the prompt.
+      // The row's buttons, each named by its label: what it fills in the prompt. Starting work is the primary one.
       const buttons = [
-        state.isReady && { name: 'ship', fills: () => fill(config.shipCommand, { n: issue.number }) },
-        state.isNext && { name: 'next', fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
+        state.isReady && { name: 'ship', isPrimary: true, fills: () => fill(config.shipCommand, { n: issue.number }) },
+        state.isNext && { name: 'next', isPrimary: true, fills: () => fill(config.mapCommand, { map: mapOf(issue)!, n: issue.number }) },
         state.isDone && { name: 'close', fills: () => fill(config.closeRequest, { n: issue.number, total: issue.subs.total }) },
         has(issue, config.needsTriage) && { name: 'triage', fills: () => triage([issue.number]) },
       ].flatMap(button => button || [])
@@ -514,8 +514,8 @@ export const register: Register = (on, options) => {
             )}
             {isExpanded && issue.subs.total > 0 && <Text dimColor>{bar}</Text>}
             {tail !== undefined && tail !== '' && <Text color={color}>{tail}</Text>}
-            {buttons.map(({ name, fills }) => (
-              <Button key={`${name}-${issue.number}`} plain label={name} onPress={() => propose($, fills())} />
+            {buttons.map(({ name, isPrimary, fills }) => (
+              <Button key={`${name}-${issue.number}`} variant={isPrimary ? 'primary' : undefined} label={name} onPress={() => propose($, fills())} />
             ))}
           </Box>
         </Box>,
@@ -539,7 +539,6 @@ export const register: Register = (on, options) => {
             {run.isStale && (
               <Button
                 key={`release-${issue.number}`}
-                plain
                 label="release"
                 onPress={() => propose($, fill(config.releaseRequest, { n: issue.number, user: issue.assignees.join(', ') }))}
               />

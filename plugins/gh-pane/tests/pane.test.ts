@@ -718,6 +718,7 @@ test('a map lists its tickets by state, never as untriaged, and its next button 
   // Waiting on its reporter, a map ticket is not next.
   expect(await ui.find({ text: 'needs-info' })).toBeDefined()
   expect(await ui.find({ key: 'next-8' })).toBeUndefined()
+  expect((await ui.find({ key: 'next-7' }))?.props).toEqual(expect.objectContaining({ variant: 'primary' }))
   await ui.press({ key: 'next-7' })
   await ui.press({ key: 'next-11' })
   expect(filled).toEqual(['/wayfinder 4 7', '/wayfinder 4 11'])
@@ -949,6 +950,19 @@ test('the footer reads the time of the last read, and reading… while one is in
   release()
   await clock.settle()
   expect(await spans(ui, 'footer')).toEqual([[readAt(NOW + 5 * 60_000), 'subtle']])
+})
+
+test('row actions are framed buttons, ship the primary one; the row toggle and the header controls stay plain', async ($, on) => {
+  host(on, { issues: [...BACKLOG, issue(50, ['needs-info'], { sub_issues_summary: { total: 1, completed: 1 } })] })
+  await open($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const look = async (key: string) => {
+    const { plain, variant } = (await ui.find({ key }))?.props ?? {}
+    return [key, plain, variant]
+  }
+  expect(await look('ship-27')).toEqual(['ship-27', undefined, 'primary'])
+  for (const key of ['triage-32', 'close-50', 'release-19']) expect(await look(key)).toEqual([key, undefined, undefined])
+  for (const key of ['toggle-27', 'refresh', 'expand']) expect(await look(key)).toEqual([key, true, undefined])
 })
 
 test('a failed read offers retry, and the header offers refresh; each re-reads now', async ($, on) => {
