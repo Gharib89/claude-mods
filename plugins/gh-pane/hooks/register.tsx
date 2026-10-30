@@ -654,7 +654,7 @@ export const register: Register = (on, options) => {
           )}
         </Box>
         <Box gap={1}>
-          <Button key="refresh" plain label="↻" onPress={() => refreshIfOpen($, config)} />
+          <Button key="refresh" plain hotkey="r" label="refresh" onPress={() => refreshIfOpen($, config)} />
           <Button
             key="expand"
             plain
@@ -674,7 +674,7 @@ export const register: Register = (on, options) => {
         </Box>
         {e.props.isFocused && (
           <Box key="hint">
-            <Text color="subtle">{`Tab moves · Enter presses · e ${expanded.all ? 'collapses' : 'expands'} all`}</Text>
+            <Text color="subtle">{`Tab moves · Enter presses · r refreshes · e ${expanded.all ? 'collapses' : 'expands'} all`}</Text>
           </Box>
         )}
       </Box>

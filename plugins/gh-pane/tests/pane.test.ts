@@ -966,6 +966,8 @@ test('row actions are framed buttons, ship the primary one; the row toggle and t
   expect(await look('ship-27')).toEqual(['ship-27', undefined, 'primary'])
   for (const key of ['triage-32', 'close-50', 'release-19']) expect(await look(key)).toEqual([key, undefined, undefined])
   for (const key of ['toggle-27', 'refresh', 'expand']) expect(await look(key)).toEqual([key, true, undefined])
+  // A one-glyph label (↻) drew wider than the one cell the focus inverts, so it lit half; a word lights whole.
+  expect((await ui.find({ key: 'refresh' }))?.props).toMatchObject({ hotkey: 'r', label: 'refresh' })
 })
 
 test('the key hint draws only while the pane holds the keyboard, and names what e does now', async ($, on) => {
@@ -973,10 +975,10 @@ test('the key hint draws only while the pane holds the keyboard, and names what 
   await open($)
   for (const isFocused of [true, false]) {
     const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, isFocused }, surface: 'terminal' })
-    expect([isFocused, await spans(ui, 'hint')]).toEqual([isFocused, isFocused ? [['Tab moves · Enter presses · e expands all', 'subtle']] : []])
+    expect([isFocused, await spans(ui, 'hint')]).toEqual([isFocused, isFocused ? [['Tab moves · Enter presses · r refreshes · e expands all', 'subtle']] : []])
     if (isFocused) {
       await ui.press({ key: 'expand' })
-      expect(await spans(ui, 'hint')).toEqual([['Tab moves · Enter presses · e collapses all', 'subtle']])
+      expect(await spans(ui, 'hint')).toEqual([['Tab moves · Enter presses · r refreshes · e collapses all', 'subtle']])
       await ui.press({ key: 'expand' })
     }
     await ui.unmount()
