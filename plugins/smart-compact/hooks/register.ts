@@ -97,7 +97,8 @@ export const register: Register = on => {
     const ran = await next(e)
     if (e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
     // context.percent is against the model's window (1M on Opus 5.5); the breakdown carries the auto-compact
-    // point, cached until a compaction that reaches the session.compact hook below (seen on Claude Code 2.1.288).
+    // point, cached until a compaction clears it: one that reaches the session.compact hook below (seen on Claude
+    // Code 2.1.288), or the headless compact_now path in turn.complete.
     if (compactAt === undefined) {
       const { context } = await $.session.usage({ breakdown: 'summary' })
       compactAt = context.breakdown?.autoCompactThreshold ?? context.window
