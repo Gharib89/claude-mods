@@ -14,7 +14,7 @@ const KEEP = [
 type Pending = { instructions: string; resume: string }
 
 // Idempotent, so KEEP rides once where the session.compact hook below also sees a /compact this mod ran with KEEP
-// in its args. On Claude Code 2.1.317 with cc-plugin-sec-default seated the hook was skipped there; elsewhere unmeasured.
+// in its args. On Claude Code 2.1.317 with cc-plugin-sec-default outermost the hook was skipped there; elsewhere unmeasured.
 const withKeep = (instructions: string | undefined) =>
   instructions?.includes(KEEP) ? instructions : [instructions, KEEP].filter(Boolean).join('\n\n')
 
