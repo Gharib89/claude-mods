@@ -167,18 +167,78 @@ test('a reminder counts the tool result it rides on', async ($, on) => {
   expect(call.context ?? []).toEqual([expect.stringMatching(/61% of the auto-compact point/)])
 })
 
-test('a headless session gets no compact_now and no reminders', async ($, on) => {
-  fillAt(on, 85_000)
-  const registered: string[] = []
+test('a headless session gets compact_now and the reminders', async ($, on) => {
+  let tokens = 61_000
+  on('session.usage', (_, e) => ({
+    value: {
+      startedAt: 0,
+      context: { window: 1_000_000, tokens, ...(e.breakdown ? { breakdown: { autoCompactThreshold: 100_000 } as never } : {}) },
+      rateLimits: [],
+    },
+  }))
+  on('ui.toast', () => ({ value: undefined }))
+  const registered: { name: string; description: string }[] = []
   on('tool.register', (_, e) => {
-    registered.push(e.name)
+    registered.push({ name: e.name, description: e.description })
     return { value: { tool: `mcp__smart-compact__${e.name}` } }
   })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
-  expect(registered).toEqual([])
-  expect((await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []).toEqual([])
+  expect(registered.map(r => r.name)).toEqual(['compact_now'])
+  // A one-shot `claude -p` exits right after the turn, so the description says compaction needs another turn.
+  expect(registered[0].description).toMatch(/only if the session takes another turn/)
+  const step = async () => (await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []
+  expect(await step()).toEqual([expect.stringMatching(/61% of the auto-compact point\. Do not compact yet/)])
+  tokens = 85_000
+  expect(await step()).toEqual([expect.stringMatching(/85%.*very next step boundary/)])
+})
+
+test('a headless compact_now compacts through /compact with its instructions and the keep-list, then submits resume', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on)
+  const commands: { command: string; args?: string }[] = []
+  const submitted: string[] = []
+  let compactions = 0
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.register', (_, e) => ({ value: { tool: `mcp__smart-compact__${e.name}` } }))
+  on('command.run', (_, e) => {
+    commands.push({ command: e.command, args: e.args })
+    return {}
+  })
+  on('session.compact', () => {
+    compactions++
+    return SUMMARY
+  })
+  on('prompt.submit', (_, e, next) => {
+    submitted.push(e.text)
+    return next(e)
+  })
+  await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
+  await $.tool.call({ tool: TOOL_ID, instructions: 'keep the marker PELICAN', resume: 'Say the marker' })
+  await $.turn.complete(TURN_END)
+  await clock.settle()
+
+  expect(compactions).toBe(0)
+  expect(commands).toHaveLength(1)
+  expect(commands[0].command).toBe('compact')
+  expect(commands[0].args).toMatch(/^keep the marker PELICAN/)
+  expect(commands[0].args).toMatch(/the current step and the next one/)
+  expect(submitted).toEqual(['Say the marker'])
+})
+
+test('the session.compact hook adds the keep-list once, whether or not it is there already', async ($, on) => {
+  const seen: (string | undefined)[] = []
+  on('session.compact', (_, e) => {
+    seen.push(e.instructions)
+    return SUMMARY
+  })
+  await $.session.compact({ trigger: 'manual', instructions: 'keep X', messages: SUMMARY.messages })
+  await $.session.compact({ trigger: 'manual', instructions: seen[0], messages: SUMMARY.messages })
+  const count = (s: string | undefined) => (s ?? '').split('the current step and the next one').length - 1
+  expect(seen[0]).toMatch(/^keep X/)
+  expect(count(seen[0])).toBe(1)
+  expect(seen[1]).toBe(seen[0])
 })
 
 test('an interactive session gets compact_now', async ($, on) => {
