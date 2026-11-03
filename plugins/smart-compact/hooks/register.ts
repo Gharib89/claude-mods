@@ -13,7 +13,8 @@ const KEEP = [
 
 type Pending = { instructions: string; resume: string }
 
-// Idempotent: a compaction this mod asked for can reach its own session.compact hook too, and KEEP rides it once.
+// Idempotent, so KEEP rides once where the session.compact hook below also sees a /compact this mod ran with KEEP
+// in its args. On Claude Code 2.1.317 with cc-plugin-sec-default seated the hook was skipped there; elsewhere unmeasured.
 const withKeep = (instructions: string | undefined) =>
   instructions?.includes(KEEP) ? instructions : [instructions, KEEP].filter(Boolean).join('\n\n')
 
@@ -52,7 +53,7 @@ export const register: Register = on => {
         'Call it between the steps of long work (after a check passes, before the next step starts), so the summary lands on finished work.',
         'Reminders arrive as the context fills: at 60% of the auto-compact point a heads-up, at 80% a request to call this at the very next step boundary.',
         'After the call, end your turn: compaction runs when the turn ends, then `resume` is submitted as the next prompt.',
-        'Compaction runs only if the session takes another turn: a one-shot run that exits after this turn drops it.',
+        'A one-shot non-interactive run (`claude -p "<prompt>"`) exits after this turn and drops the compaction: there it runs only if the session takes another turn.',
       ].join(' '),
       inputSchema: {
         type: 'object',

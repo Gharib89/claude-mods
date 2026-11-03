@@ -187,7 +187,7 @@ test('a headless session gets compact_now and the reminders', async ($, on) => {
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   expect(registered.map(r => r.name)).toEqual(['compact_now'])
   // A one-shot `claude -p` exits right after the turn, so the description says compaction needs another turn.
-  expect(registered[0].description).toMatch(/only if the session takes another turn/)
+  expect(registered[0].description).toMatch(/runs only if the session takes another turn/)
   const step = async () => (await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []
   expect(await step()).toEqual([expect.stringMatching(/61% of the auto-compact point\. Do not compact yet/)])
   tokens = 85_000
@@ -253,13 +253,13 @@ test('an interactive session gets compact_now', async ($, on) => {
 })
 
 // The fill reads 85% before and after: a compaction that leaves the next result past 80% must ask again.
-const remindsAgainAfter = async ($: Parameters<TestBody>[0], on: On, compact: () => Promise<unknown>) => {
+const remindsAgainAfter = async ($: Parameters<TestBody>[0], on: On, compact: () => Promise<unknown>, isInteractive = true) => {
   fillAt(on, 85_000)
   on('ui.toast', () => ({ value: undefined }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.compact', () => SUMMARY)
   on('tool.call', { tool: 'Read' }, () => ({ result: 'ok' }))
-  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await $.session.start({ cwd: '/work', surface: isInteractive ? 'terminal' : null, isInteractive })
   const step = async () => (await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []
   expect(await step()).toEqual([expect.stringMatching(/very next step boundary/)])
   await compact()
@@ -279,4 +279,22 @@ test('a compact_now compaction re-arms the reminders', async ($, on) => {
     await $.turn.complete(TURN_END)
     await clock.settle()
   })
+})
+
+test('a headless compact_now compaction re-arms the reminders', async ($, on) => {
+  const clock = mock.clock(on)
+  on('turn.complete', (_, e) => ({ text: e.answer }))
+  on('prompt.submit', (_, e, next) => next(e))
+  on('tool.register', (_, e) => ({ value: { tool: `mcp__smart-compact__${e.name}` } }))
+  on('command.run', () => ({}))
+  await remindsAgainAfter(
+    $,
+    on,
+    async () => {
+      await $.tool.call({ tool: TOOL_ID, instructions: 'keep the plan', resume: 'Continue at step 4' })
+      await $.turn.complete(TURN_END)
+      await clock.settle()
+    },
+    false,
+  )
 })
