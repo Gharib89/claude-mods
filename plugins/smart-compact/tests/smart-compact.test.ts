@@ -187,7 +187,7 @@ test('a headless session gets compact_now and the reminders', async ($, on) => {
   await $.session.start({ cwd: '/work', surface: null, isInteractive: false })
   expect(registered.map(r => r.name)).toEqual(['compact_now'])
   // A one-shot `claude -p` exits right after the turn, so the description says compaction needs another turn.
-  expect(registered[0].description).toMatch(/one-shot non-interactive run .*runs only if the session takes another turn/)
+  expect(registered[0]?.description).toMatch(/one-shot non-interactive run .*runs only if the session takes another turn/)
   const step = async () => (await $.tool.call({ tool: 'Read', file_path: 'notes.md' })).context ?? []
   expect(await step()).toEqual([expect.stringMatching(/61% of the auto-compact point\. Do not compact yet/)])
   tokens = 85_000
@@ -220,10 +220,9 @@ test('a headless compact_now compacts through /compact with its instructions and
   await clock.settle()
 
   expect(compactions).toBe(0)
-  expect(commands).toHaveLength(1)
-  expect(commands[0].command).toBe('compact')
-  expect(commands[0].args).toMatch(/^keep the marker PELICAN/)
-  expect(commands[0].args).toMatch(/the current step and the next one/)
+  expect(commands).toEqual([
+    { command: 'compact', args: expect.stringMatching(/^keep the marker PELICAN[\s\S]*the current step and the next one/) },
+  ])
   expect(submitted).toEqual(['Say the marker'])
 })
 
