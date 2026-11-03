@@ -13,7 +13,10 @@ const KEEP = [
 
 type Pending = { instructions: string; resume: string }
 
-const withKeep = (instructions: string | undefined) => [instructions, KEEP].filter(Boolean).join('\n\n')
+// Idempotent, so KEEP rides once where the session.compact hook below also sees a /compact this mod ran with KEEP
+// in its args. On Claude Code 2.1.317 with cc-plugin-sec-default outermost the hook was skipped there; elsewhere unmeasured.
+const withKeep = (instructions: string | undefined) =>
+  instructions?.includes(KEEP) ? instructions : [instructions, KEEP].filter(Boolean).join('\n\n')
 
 // Shares of the auto-compact point at which Claude is told, once each, to plan a compact; highest first.
 const LEVELS = [
@@ -36,13 +39,13 @@ export const register: Register = on => {
   // The highest level already said; back to 0 after every compaction, and once the context drops below the lowest.
   let warned = 0
   let compactAt: number | undefined
-  // $.session.compact rejects in a -p or SDK session (Claude Code 2.1.288), so there the mod offers no tool and
-  // asks for none; the keep-list still rides every compaction.
+  // In a -p or SDK session $.session.compact rejects ("not available in a headless (-p / SDK) session yet:
+  // compaction here runs inside a turn (a /compact prompt)"), and $.command.run({ command: 'compact', args })
+  // compacts with `args` as the instructions (Claude Code 2.1.317).
   let headless = false
 
   on('session.start', async ($, e, next) => {
     headless = !e.isInteractive
-    if (headless) return next(e)
     await $.tool.register({
       name: TOOL,
       description: [
@@ -50,6 +53,7 @@ export const register: Register = on => {
         'Call it between the steps of long work (after a check passes, before the next step starts), so the summary lands on finished work.',
         'Reminders arrive as the context fills: at 60% of the auto-compact point a heads-up, at 80% a request to call this at the very next step boundary.',
         'After the call, end your turn: compaction runs when the turn ends, then `resume` is submitted as the next prompt.',
+        'A one-shot non-interactive run (`claude -p "<prompt>"`) exits after this turn and drops the compaction: there it runs only if the session takes another turn.',
       ].join(' '),
       inputSchema: {
         type: 'object',
@@ -91,9 +95,10 @@ export const register: Register = on => {
   // Every main-loop tool result: how full the context is against the auto-compact point, not the model's window.
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
-    if (headless || e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
+    if (e.agentId !== undefined || e.tool === TOOL_ID || ran.deny !== undefined) return ran
     // context.percent is against the model's window (1M on Opus 5.5); the breakdown carries the auto-compact
-    // point, cached until a compaction that reaches the session.compact hook below (seen on Claude Code 2.1.288).
+    // point, cached until a compaction clears it: one that reaches the session.compact hook below (seen on Claude
+    // Code 2.1.288), or the headless compact_now path in turn.complete.
     if (compactAt === undefined) {
       const { context } = await $.session.usage({ breakdown: 'summary' })
       compactAt = context.breakdown?.autoCompactThreshold ?? context.window
@@ -126,6 +131,15 @@ export const register: Register = on => {
     // $.session.compact refuses while a turn runs, so it starts once this dispatch has returned (Claude Code 2.1.288).
     $.clock.after(0, () => {
       void (async () => {
+        if (headless) {
+          // The mod's session.compact hook is skipped wherever cc-plugin-sec-default sits outermost (2.1.317), so
+          // this path adds KEEP and re-arms the reminders itself.
+          await $.command.run({ command: 'compact', args: withKeep(request.instructions) })
+          compactAt = undefined
+          warned = 0
+          await $.prompt.submit({ text: request.resume })
+          return
+        }
         const compacted = await $.session.compact({ instructions: withKeep(request.instructions) })
         if (compacted.skip !== undefined) {
           $.ui.toast(`smart-compact: compaction skipped (${compacted.skip}); not resuming`)
