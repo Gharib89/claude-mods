@@ -7,6 +7,60 @@ released version. See
 
 <!-- version list -->
 
+## v0.16.0 (2026-11-13)
+
+### Features
+
+- **skills-cli**: Pin the skills CLI to 1.8.1 and move the lock to version 2
+  ([#1237](https://github.com/Gharib89/skills/pull/1237),
+  [`07c9d46`](https://github.com/Gharib89/skills/commit/07c9d4673d5f53c5bd977e36934f304ef6296c02))
+
+
+## v0.15.2 (2026-11-12)
+
+### Bug Fixes
+
+- **setup-harness**: Print a line before the stop hook's blocking exit
+  ([#1202](https://github.com/Gharib89/skills/pull/1202),
+  [`93e0031`](https://github.com/Gharib89/skills/commit/93e00318627bab98067f5fe7fe7c46d997b38ef1))
+
+
+## v0.15.1 (2026-11-12)
+
+### Chores
+
+- **scripts**: Lint a failed read taken as a verdict and an unpaged list read
+  ([#1183](https://github.com/Gharib89/skills/pull/1183),
+  [`e6b9295`](https://github.com/Gharib89/skills/commit/e6b9295f677dff4cdd6009ea57000bbc6e3578fc))
+
+
+## v0.15.0 (2026-10-30)
+
+### Features
+
+- **setup-harness**: A local-only harness and a no-harness gate name an install for a missing tool
+  ([#1065](https://github.com/Gharib89/skills/pull/1065),
+  [`fb0f990`](https://github.com/Gharib89/skills/commit/fb0f9903207c2b80a1eb09bac439933ea40d3efb))
+
+
+## v0.14.0 (2026-10-30)
+
+### Features
+
+- **setup-harness**: A local session gets the gate tools' local install
+  ([#1063](https://github.com/Gharib89/skills/pull/1063),
+  [`36b7fc1`](https://github.com/Gharib89/skills/commit/36b7fc1df30af474fb8e9a9e53207946562088e2))
+
+
+## v0.13.1 (2026-10-30)
+
+### Bug Fixes
+
+- **setup-harness**: The edit hook stays in the session's repo, and pinned cloud done tests match
+  the pin ([#1061](https://github.com/Gharib89/skills/pull/1061),
+  [`f943f0b`](https://github.com/Gharib89/skills/commit/f943f0b7a4789251ff8d9887bd60f13fa5b71cde))
+
+
 ## v0.13.0 (2026-10-20)
 
 ### Features

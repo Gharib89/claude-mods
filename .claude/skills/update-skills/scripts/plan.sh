@@ -17,10 +17,11 @@
 #          "drift": [{skill, pin, head}],
 #          "others": [{skill, source, old_ref, head, install}],
 #          "sections": [{section, template}],
-#          "retired": [{skill, version, term, replacement}]}
+#          "retired": [{skill, version, term, replacement}],
+#          "rehash": [{skill, source, ref, install}]}
 #   source_skills: lock entries installed from the source repo; changelog is
 #     the path of the skill's CHANGELOG.md; a null old_version is a skill the
-#     old tree lacked.
+#     old tree lacked (`ship-run` reads `ship`'s there, from before the rename).
 #   composed: every entry of the refreshed composes lines, installed at its
 #     pin, the first entry naming a skill winning.
 #   old_ref, in composed and others: the old tree's lock ref, null for a copy
@@ -41,10 +42,16 @@
 #     compared by release part; a replacement of `None.`, or none, is null. A
 #     skill the old tree lacked has none: the repo never used its words. A row
 #     whose version cell is no version fails the plan rather than vanish.
-#   mode: `source` where the lock installs ship from `.`, the source repo itself.
+#   mode: `source` where the lock installs ship-run from `.`, the source repo itself.
+#   rehash: every working-tree lock entry with a ref and an empty computedHash,
+#     neither from the source repo nor composed, re-added at that same ref.
+#     The skills CLI's version 1 to 2 lock migration writes that empty hash for
+#     every entry it did not just install (it re-hashes `.agents/skills/`, which
+#     a `--agent claude-code` install never creates); a re-add at the locked ref
+#     fills it and moves no version.
 # exit: 0 · 1 an unreadable lock, heads file, old ref or retired-terms row · 2 usage
 set -uo pipefail
-source "$(dirname "${BASH_SOURCE[0]}")/../../ship/scripts/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
+source "$(dirname "${BASH_SOURCE[0]}")/../../ship-run/scripts/_lib.sh" || { printf '{"error":"cannot source _lib.sh"}\n'; exit 2; }
 source "$(dirname "${BASH_SOURCE[0]}")/_lib.sh" || ship_tooling "cannot source update-skills' _lib.sh"
 
 usage='usage: plan <checkout> <heads-file> [--old <ref>]'
@@ -73,6 +80,10 @@ while IFS= read -r s; do
   [ -n "$s" ] || continue
   new=$(ship_frontmatter "$root/$skills/$s/SKILL.md" version 2>/dev/null)
   was=$(git -C "$root" show "$old:$skills/$s/SKILL.md" 2>/dev/null | ship_frontmatter /dev/stdin version)
+  # Ship's skill was `ship` before its rename to `ship-run`: an old tree from
+  # before it holds the version there, and the rows retired since it still apply.
+  [ -n "$was" ] || [ "$s" != ship-run ] \
+    || was=$(git -C "$root" show "$old:$skills/ship/SKILL.md" 2>/dev/null | ship_frontmatter /dev/stdin version)
   versions=$(jq -c --arg s "$s" --arg o "$was" --arg n "$new" --arg c "$skills/$s/CHANGELOG.md" \
     '. + [{skill: $s, old_version: (if $o == "" then null else $o end), new_version: (if $n == "" then null else $n end), changelog: $c}]' <<<"$versions")
   f=$root/$skills/$s/retired-terms.md
@@ -108,9 +119,9 @@ done
 
 jq -n --arg old "$old" --argjson composed "$(us_composed "$root")" --argjson lock "$lock" --argjson oldlock "$oldlock" \
   --argjson heads "$heads" --argjson versions "$versions" --argjson sections "$sections" --argjson retired "$retired" "$us_source_repo"'
-  def install($src; $ref; $s): "npx skills add \($src)#\($ref) --skill \($s) --agent claude-code -y </dev/null";
+  def install($src; $ref; $s): "npx skills@1.8.1 add \($src)#\($ref) --skill \($s) --agent claude-code -y </dev/null";
   ($composed | map(.skill)) as $names
-  | {mode: (if $lock.skills.ship.source? == "." then "source" else "consumer" end),
+  | {mode: (if $lock.skills["ship-run"].source? == "." then "source" else "consumer" end),
      old: $old,
      source_skills: $versions,
      composed: [$composed[] | . + {old_ref: ($oldlock.skills[.skill].ref? // null), install: install(.source; .pin; .skill)}],
@@ -123,4 +134,8 @@ jq -n --arg old "$old" --argjson composed "$(us_composed "$root")" --argjson loc
        | {skill: .key, source: .value.source, old_ref: $was, head: $heads[.key],
           install: install(.value.source; $heads[.key]; .key)}],
      sections: $sections,
+     rehash: [$lock.skills | to_entries | sort_by(.key)[]
+       | select(.value.computedHash == "" and .value.ref != null and (.value | source_repo | not))
+       | select(.key as $k | $names | index($k) | not)
+       | {skill: .key, source: .value.source, ref: .value.ref, install: install(.value.source; .value.ref; .key)}],
      retired: $retired}'

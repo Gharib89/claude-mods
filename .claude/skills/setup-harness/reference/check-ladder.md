@@ -21,7 +21,7 @@ Each `check.sh` rung (`edit`, `turn`, `full`) first installs each root whose dep
 
 `check.sh` calls a linter directly only when the runner cannot take a file list (lint-staged). Typecheck and tests live in `check.sh`. There is no `commit` subcommand: the commit rung is the runner's git hook.
 
-The contract every caller parses: stdout is one JSON line `{"rung","verdict","checks":{<name>:<status>}}`, status `pass | fail | unavailable | skipped | over-budget`; stderr carries each failing check's last 40 lines; exit 0 pass, 1 fail, 2 unavailable or tooling, 3 over budget. `full`'s report order and `CHECK_DEADLINE` are as [templates/check.sh](../templates/check.sh) states.
+The contract every caller parses: stdout is one JSON line `{"rung","verdict","checks":{<name>:<status>}}`, status `pass | fail | unavailable | skipped | over-budget`; stderr carries each failing check's last 40 lines, and under a check whose tool is missing (`unavailable`, or a `runner` failure with `not found` or `No such file or directory` in its log, a hint a hook's own message can also fire) a line naming the cloud setup's `--local` ([cloud.md](cloud.md)) where the harness profile's `Setup:` names one, or, at `Setup: None.`, where `.claude/hooks/cloud-setup.sh` exists; exit 0 pass, 1 fail, 2 unavailable or tooling, 3 over budget. `full`'s report order and `CHECK_DEADLINE` are as [templates/check.sh](../templates/check.sh) states.
 
 ## Writing check.sh
 

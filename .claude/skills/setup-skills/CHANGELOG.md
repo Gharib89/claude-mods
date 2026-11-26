@@ -7,6 +7,104 @@ released version. See
 
 <!-- version list -->
 
+## v0.33.1 (2026-11-26)
+
+### Bug Fixes
+
+- **ship-run**: Refuse a merge call in any form but the bare one
+  ([#1426](https://github.com/Gharib89/skills/pull/1426),
+  [`190b375`](https://github.com/Gharib89/skills/commit/190b3756a5eea63a837cfa94e3ea3e0fb5294589))
+
+
+## v0.33.0 (2026-11-24)
+
+### Features
+
+- **ship-run**: Move find-docs to 9169e8b ([#1407](https://github.com/Gharib89/skills/pull/1407),
+  [`6510e22`](https://github.com/Gharib89/skills/commit/6510e22c0f295ca74c31c6639fcb947290f1c0b3))
+
+
+## v0.32.0 (2026-11-24)
+
+### Features
+
+- **ship-run**: Rename the ship skill to ship-run, out from under the built-in /ship
+  ([#1371](https://github.com/Gharib89/skills/pull/1371),
+  [`9fe9dba`](https://github.com/Gharib89/skills/commit/9fe9dbaaf7f1d25de4983b595a3a1eab173d6346))
+
+
+## v0.31.0 (2026-11-13)
+
+### Features
+
+- **skills-cli**: Pin the skills CLI to 1.8.1 and move the lock to version 2
+  ([#1237](https://github.com/Gharib89/skills/pull/1237),
+  [`07c9d46`](https://github.com/Gharib89/skills/commit/07c9d4673d5f53c5bd977e36934f304ef6296c02))
+
+
+## v0.30.1 (2026-11-13)
+
+### Bug Fixes
+
+- **setup-skills**: Accept harness exits 0 to 3, offer Body-check, Timebox and Paths, trim
+  branch-only prose ([#1224](https://github.com/Gharib89/skills/pull/1224),
+  [`2540200`](https://github.com/Gharib89/skills/commit/254020014a6d40d665cfdeee428d1c9216b4fcaa))
+
+
+## v0.30.0 (2026-11-13)
+
+### Features
+
+- **ship**: Merge refuses unsettled checks, a head with no admission record, and a sandbox that does
+  not merge ([#1221](https://github.com/Gharib89/skills/pull/1221),
+  [`990dde0`](https://github.com/Gharib89/skills/commit/990dde0ac1073f6dac7008a861783783a8ea82c4))
+
+
+## v0.29.1 (2026-11-12)
+
+### Bug Fixes
+
+- **skills**: Drop two history references, scope the wake rule, align the diff fence rule
+  ([#1198](https://github.com/Gharib89/skills/pull/1198),
+  [`83ff616`](https://github.com/Gharib89/skills/commit/83ff6161547cf48dbb7432e8a5d4efb3c1a42479))
+
+
+## v0.29.0 (2026-11-11)
+
+### Features
+
+- **ship**: Move find-docs to 681554c, hyperframes and media-use to 3e04a59
+  ([#1159](https://github.com/Gharib89/skills/pull/1159),
+  [`0d23bda`](https://github.com/Gharib89/skills/commit/0d23bda846ac5abdcafdbaf51ef5307f93c7403e))
+
+
+## v0.28.0 (2026-10-30)
+
+### Features
+
+- **setup-harness**: A local-only harness and a no-harness gate name an install for a missing tool
+  ([#1065](https://github.com/Gharib89/skills/pull/1065),
+  [`fb0f990`](https://github.com/Gharib89/skills/commit/fb0f9903207c2b80a1eb09bac439933ea40d3efb))
+
+
+## v0.27.0 (2026-10-30)
+
+### Features
+
+- **setup-harness**: A local session gets the gate tools' local install
+  ([#1063](https://github.com/Gharib89/skills/pull/1063),
+  [`36b7fc1`](https://github.com/Gharib89/skills/commit/36b7fc1df30af474fb8e9a9e53207946562088e2))
+
+
+## v0.26.0 (2026-10-29)
+
+### Features
+
+- **ship**: Move code-review and codebase-design to a496f55
+  ([#1052](https://github.com/Gharib89/skills/pull/1052),
+  [`0490956`](https://github.com/Gharib89/skills/commit/0490956482c9d1abf1cfb6f710b707be40039cb8))
+
+
 ## v0.25.3 (2026-10-27)
 
 ### Bug Fixes

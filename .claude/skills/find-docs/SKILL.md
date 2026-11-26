@@ -74,7 +74,7 @@ Each result includes:
 - **Code Snippets** — Number of available code examples
 - **Source Reputation** — Authority indicator (High, Medium, Low, or Unknown)
 - **Benchmark Score** — Quality indicator (100 is the highest score)
-- **Versions** — List of versions if available. Use one of those versions if the user provides a version in their query. The format is `/org/project/version`.
+- **Versions** — Indexed versions, if any. When the user's project or query names a version, pass it with `--tag` (e.g. `--tag 15.4.3`, or `--tag ^15.4.3` as written in package.json), even when it is not listed: Context7 serves the indexed version that covers it.
 
 ### Selection process
 
@@ -89,26 +89,26 @@ Each result includes:
 4. If no good matches exist, clearly state this and suggest query refinements
 5. For ambiguous queries, request clarification before proceeding with a best-guess match
 
-### Version-specific IDs
+### Versions
 
-If the user mentions a specific version, use a version-specific library ID:
+If the user's project or question names a version, pass it with `--tag`:
 
 ```bash
 # General (latest indexed)
 npx ctx7@latest docs /vercel/next.js "How to set up app router"
 
 # Version-specific
-npx ctx7@latest docs /vercel/next.js/v16.2.9 "How to set up app router"
+npx ctx7@latest docs /vercel/next.js "How to set up app router" --tag 16.2.9
 ```
 
-The available versions are listed in the `library` command output. Use the closest match to what the user specified.
+The available versions are listed in the `library` command output. Pass the exact version the user specified, even when it is not listed: Context7 serves the indexed version that covers it.
 
 ## Step 2: Query Documentation
 
 Retrieves up-to-date documentation and code examples for the resolved library.
 
 ```bash
-npx ctx7@latest docs /facebook/react "How to clean up useEffect with async operations"
+npx ctx7@latest docs /reactjs/react.dev "How to clean up useEffect with async operations"
 npx ctx7@latest docs /vercel/next.js "How to add an authentication proxy to app router"
 npx ctx7@latest docs /prisma/prisma "How to define one-to-many relations with cascade delete"
 ```
@@ -159,7 +159,7 @@ Do not silently fall back to training data — always tell the user why Context7
 
 ## Common Mistakes
 
-- Library IDs require a `/` prefix — `/facebook/react` not `facebook/react`
+- Library IDs require a `/` prefix — `/reactjs/react.dev` not `reactjs/react.dev`
 - Always run `npx ctx7@latest library` first — `npx ctx7@latest docs react "hooks"` will fail without a valid ID
 - Use descriptive queries, not single words — `"React useEffect cleanup function"` not `"hooks"`
 - One topic per query — split `"routing and auth and caching"` into a separate `docs` command per concept, unless the question is about how they interact

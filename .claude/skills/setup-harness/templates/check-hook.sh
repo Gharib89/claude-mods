@@ -7,13 +7,17 @@
 #                        not changed since the last check
 #
 # The edit rung checks in the edited file's repo, the turn rung in the cwd's;
-# a repo with no $CHECK is skipped in silence.
+# a repo with no $CHECK, or an edited file outside the session's repo and its
+# worktrees, is skipped in silence.
 #
 # Claude Code sees only exit 2, so a failing check (check.sh exit 1) becomes
 # exit 2 with its output on stderr, capped under the 10k-character limit past
-# which Claude Code swaps it for a file path. A check that is unavailable
-# (exit 2) or over budget (exit 3) never blocks: it is a systemMessage to the
-# human, and the next rung still catches defects.
+# which Claude Code swaps it for a file path, and one line on stdout, with the
+# failing checks' names when check.sh reports them. A Stop hook that exits 2
+# with empty stdout and a stderr naming a missing file is non-blocking
+# (measured, #1189), and a failing test's tail often names a missing file. A
+# check that is unavailable (exit 2) or over budget (exit 3) never blocks: it
+# is a systemMessage to the human, and the next rung still catches defects.
 #
 # Bash 3.2 and no jq. The budgets below are written from the harness profile's
 # `## Budgets`; each hook entry's `timeout` in .claude/settings.json is the
@@ -41,6 +45,10 @@ if [ "$rung" = edit ]; then
   [ -n "$file" ] || exit 0
   # The repo that owns the edited file, wherever the shell's cwd has moved.
   root=$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>/dev/null) || exit 0
+  # Only the session's own repo or one of its worktrees (the same git common
+  # dir): another checkout's check.sh would run its own installs.
+  [ "$(git -C "$root" rev-parse --path-format=absolute --git-common-dir)" = \
+    "$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" ] || exit 0
   set -- "$file"
 else
   # The cwd's repo, so a session in a worktree checks the worktree.
@@ -93,7 +101,8 @@ if [ "$rung" = turn ] && [ -n "$fp" ]; then
 fi
 case $code in
   0) exit 0 ;;
-  1) head -c 9000 "$errf" >&2; exit 2 ;;
+  1) n=$(named fail "$out"); echo "harness: $rung rung failed${n:+: $n}"
+     head -c 9000 "$errf" >&2; exit 2 ;;
   3) n=$(named over-budget "$out")
      if [ -n "$n" ]; then say "harness: $rung rung over its $budget s budget: $n"
      else say "harness: $rung rung over its $budget s budget before $(named skipped "$out") started"; fi ;;

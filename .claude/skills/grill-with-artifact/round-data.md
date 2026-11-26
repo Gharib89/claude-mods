@@ -64,6 +64,7 @@ page reads and writes nothing outside this table.
 | `round.summary` | array | closing | Every decision, grouped under a few headings. |
 | `round.summary[].heading` | string | yes | The group's heading. |
 | `round.summary[].text` | string | yes | The group's decisions, as prose. |
+| `round.wake` | boolean | no | `false` when the session is unarmed: Submit saves the answers, sends no comment, and tells the human to type `submitted` in the chat. Absent or `true`, Submit also sends the doorbell comment. |
 | `answers.round` | number | yes | The round answered. |
 | `answers.submittedAt` | string | yes | ISO 8601 time of the Submit. |
 | `answers.answers` | array | yes | One entry per question, or one entry `closing` in a closing round. |

@@ -7,6 +7,24 @@ released version. See
 
 <!-- version list -->
 
+## v0.4.0 (2026-11-24)
+
+### Features
+
+- **ship-run**: Rename the ship skill to ship-run, out from under the built-in /ship
+  ([#1371](https://github.com/Gharib89/skills/pull/1371),
+  [`9fe9dba`](https://github.com/Gharib89/skills/commit/9fe9dbaaf7f1d25de4983b595a3a1eab173d6346))
+
+
+## v0.3.1 (2026-11-13)
+
+### Bug Fixes
+
+- **cloud-ship**: Read the version where frontmatter is stripped, drop cached reviewer words, trim
+  description ([#1231](https://github.com/Gharib89/skills/pull/1231),
+  [`303cf93`](https://github.com/Gharib89/skills/commit/303cf9379426f6632733d41525c097ae3e990770))
+
+
 ## v0.3.0 (2026-10-12)
 
 ### Features

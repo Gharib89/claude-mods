@@ -7,6 +7,51 @@ released version. See
 
 <!-- version list -->
 
+## v0.7.1 (2026-11-23)
+
+### Bug Fixes
+
+- **grill-with-artifact**: An unarmed page saves a Submit and sends no comment
+  ([#1352](https://github.com/Gharib89/skills/pull/1352),
+  [`cd60dab`](https://github.com/Gharib89/skills/commit/cd60dab09ba22669a417624f3dbcb8a92bd10b25))
+
+
+## v0.7.0 (2026-11-13)
+
+### Features
+
+- **skills-cli**: Pin the skills CLI to 1.8.1 and move the lock to version 2
+  ([#1237](https://github.com/Gharib89/skills/pull/1237),
+  [`07c9d46`](https://github.com/Gharib89/skills/commit/07c9d4673d5f53c5bd977e36934f304ef6296c02))
+
+
+## v0.6.1 (2026-11-13)
+
+### Documentation
+
+- **grill-with-artifact**: State the wayfinder branch and the ADR rule, trim step 3 and description
+  ([#1227](https://github.com/Gharib89/skills/pull/1227),
+  [`525c36b`](https://github.com/Gharib89/skills/commit/525c36bfff243d4e7d44ef128769ee4443b5cdb9))
+
+
+## v0.6.0 (2026-11-04)
+
+### Features
+
+- **drive-session**: Run where a Herdr server answers, and point page fallbacks at the chat
+  ([#1077](https://github.com/Gharib89/skills/pull/1077),
+  [`0ed0300`](https://github.com/Gharib89/skills/commit/0ed0300a081a2e279ed7c820a64edc08baa3328c))
+
+
+## v0.5.0 (2026-10-29)
+
+### Features
+
+- **ship**: Move code-review and codebase-design to a496f55
+  ([#1052](https://github.com/Gharib89/skills/pull/1052),
+  [`0490956`](https://github.com/Gharib89/skills/commit/0490956482c9d1abf1cfb6f710b707be40039cb8))
+
+
 ## v0.4.3 (2026-10-18)
 
 ### Refactoring
