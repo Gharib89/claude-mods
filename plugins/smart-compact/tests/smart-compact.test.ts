@@ -219,7 +219,8 @@ test('a headless compact_now compacts through /compact with its instructions and
   // The host sees this turn's result before the compaction starts, so a host that closes an idle session (T3 Code:
   // 120 s) can cut a long one: the caller is told, to say so to the owner instead of waiting on it.
   expect(call.result).toMatch(/^Compaction queued\. End your turn now with a one-line status\./)
-  expect(call.result).toMatch(/host that closes an idle session .*120 s.*cut a compaction that runs longer/)
+  expect(call.result).toMatch(/host that closes an idle session \(T3 Code does after 120 s\) can cut a compaction that runs longer/)
+  expect(call.result).toMatch(/tell the owner instead of waiting/)
   await $.turn.complete(TURN_END)
   await clock.settle()
 
