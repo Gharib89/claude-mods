@@ -7,6 +7,69 @@ released version. See
 
 <!-- version list -->
 
+## v0.14.0 (2026-11-24)
+
+### Features
+
+- **ship-run**: Rename the ship skill to ship-run, out from under the built-in /ship
+  ([#1371](https://github.com/Gharib89/skills/pull/1371),
+  [`9fe9dba`](https://github.com/Gharib89/skills/commit/9fe9dbaaf7f1d25de4983b595a3a1eab173d6346))
+
+
+## v0.13.0 (2026-11-23)
+
+### Features
+
+- **ship**: Cleanup removes only the run's own worktree and branch
+  ([#1349](https://github.com/Gharib89/skills/pull/1349),
+  [`8d88edc`](https://github.com/Gharib89/skills/commit/8d88edc7965af758e3c168add14e8693eebea212))
+
+
+## v0.12.0 (2026-11-15)
+
+### Features
+
+- **ship**: The agent runs the PR create as its own Bash call
+  ([#1247](https://github.com/Gharib89/skills/pull/1247),
+  [`f9e9cac`](https://github.com/Gharib89/skills/commit/f9e9cac4a81448f74cb210ce577a71726d0fd18e))
+
+
+## v0.11.0 (2026-11-13)
+
+### Features
+
+- **skills-cli**: Pin the skills CLI to 1.8.1 and move the lock to version 2
+  ([#1237](https://github.com/Gharib89/skills/pull/1237),
+  [`07c9d46`](https://github.com/Gharib89/skills/commit/07c9d4673d5f53c5bd977e36934f304ef6296c02))
+
+
+## v0.10.4 (2026-11-13)
+
+### Bug Fixes
+
+- **update-skills**: Fix isolation, consumer-repo and Ship-run prose, move source-repo steps to a
+  reference ([#1226](https://github.com/Gharib89/skills/pull/1226),
+  [`7459fec`](https://github.com/Gharib89/skills/commit/7459fec6825160c6c3cfdf0928bee585d5b25972))
+
+
+## v0.10.3 (2026-11-12)
+
+### Bug Fixes
+
+- **skills**: Drop two history references, scope the wake rule, align the diff fence rule
+  ([#1198](https://github.com/Gharib89/skills/pull/1198),
+  [`83ff616`](https://github.com/Gharib89/skills/commit/83ff6161547cf48dbb7432e8a5d4efb3c1a42479))
+
+
+## v0.10.2 (2026-10-30)
+
+### Bug Fixes
+
+- **update-skills**: A behavioural Shape for re-run edits, and a cleanup line that removes the
+  refresh ([#1059](https://github.com/Gharib89/skills/pull/1059),
+  [`81a5b88`](https://github.com/Gharib89/skills/commit/81a5b88a6dcb6c4c5a7e89666fbaa291fbf269fe))
+
+
 ## v0.10.1 (2026-10-20)
 
 ### Performance Improvements

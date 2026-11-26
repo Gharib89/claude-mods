@@ -134,18 +134,9 @@ async function boot() {
     while (enc.encode(s + tail).length > 4096) s = s.slice(0, -64);
     return s + tail;
   }
-  async function wake(anchor) {
-    if (!comments || !anchor) return false;
-    try {
-      // `available` means this viewer may send, not that a session is watching: a send with no watch
-      // lands and wakes nothing, so the sent receipt still names the typed fallback.
-      if ((await comments.canSendToClaude()) !== "available") return false;
-      await comments.sendToClaude({ anchor, text: capped(answersText(S)) });
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
+  // `available` means some Claude session answers the send, not that this one watches: an unarmed
+  // round says so with `wake: false`, and `ring` then sends nothing.
+  const wake = (anchor) => ring(S, comments, anchor, capped(answersText(S)));
   // A Submit anchors on the button pressed (Confirm, Not yet or Submit); a retry anchors on the Submit it retries.
   const anchorOf = (el) =>
     comments ? comments.anchorFor(el).catch(() => null) : Promise.resolve(null);
@@ -156,7 +147,9 @@ async function boot() {
     const doc = answersDoc(S);
     S.status = "sending";
     render();
-    const anchor = await anchorOf(document.getElementById(btn.id) || btn);
+    const anchor = armed(S)
+      ? await anchorOf(document.getElementById(btn.id) || btn)
+      : null;
     const saved = await db
       .doc("answers/round-" + doc.round)
       .set(doc)
@@ -164,8 +157,7 @@ async function boot() {
         () => true,
         () => false,
       );
-    const woke = await wake(anchor);
-    S.status = woke ? "sent" : saved ? "saved" : "neither";
+    S.status = outcome(saved, await wake(anchor));
     render();
   }
   async function rewake(btn) {

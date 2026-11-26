@@ -39,6 +39,7 @@ Run: `<command>`
 Hook: local | <vendor hook repo URL> | None.
 Pin: <pin kind> <registry> [<repository URL>] <name>
 Route: `<install command>`; Blocked: <routes that 403> | None.
+Done test: `<passes only on the pinned install>`  (only when Route: carries {version}, a `docker pull` route excepted)
 Constraints: <needs / breaks with> | None.
 Unavailable: <reason>                  (only when it applies)
 Local-only: <reason>                   (only when it applies)
@@ -56,6 +57,7 @@ Roles, as `##` headings, from this set only: `lint`, `format`, `typecheck`, `tes
 - **Paths.** A file kind claimed by path scopes each of its hooks with `files:`, a regex of its `Paths:` globs (`^\.github/workflows/[^/]+\.ya?ml$`), never by `types`, which would hand every YAML file to a workflow linter. A glob's `*` stays within one directory.
 - **Pin.** The kind names the install check's pin table: `package <npm|pypi|go|crates|nuget|maven|dockerhub> <name>` (maven `<group>:<artifact>` on Maven Central, or `<repository URL> <group>:<artifact>` on another Maven repository; dockerhub the image repository), `apt <name>`, `hook-repo <url>`, `download <url>`.
 - **Route.** The install that passes in a cloud sandbox, in backticks, with `{version}` for the version the run picks; `Blocked:` names the routes a cloud sandbox refuses, so a run never proposes them. Route serves the cloud sandbox; a local install follows the install check's pin table.
+- **Done test.** The cloud setup row's done test for a `Route:` carrying `{version}`, in backticks, passing only when the tool's own output names the pinned version: most read `[[ " $(<tool> --version 2>&1) " == *[!0-9.]{version}[!0-9.-]* ]]`, the version preceded by any character but a digit or `.` and followed by any but those or `-`, and one whose output names several versions anchors on its own name (pytest-testmon's `pytest-testmon-{version}`), so an older install, `1.2.30` or `1.2.3-rc.1` against a `1.2.3` pin, fails it and the step runs again. A tool printing its version without the pin's leading `v` strips it in the test (golangci-lint's `v={version}; ... ${v#v}`). No `|` (the row's field separator) and no `'` (`STEPS` is single-quoted). A `docker pull` route has none: [reference/cloud.md](../reference/cloud.md) step 5 pins its image by digest.
 
 Each stack's commands, by its lockfile:
 

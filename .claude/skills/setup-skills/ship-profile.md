@@ -2,7 +2,7 @@
 
 Schema: 5
 
-Every repo-specific fact `/ship` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship` checks at preflight; only a `setup-skills` re-run moves it.
+Every repo-specific fact `/ship-run` needs, one section per axis. Fourteen `##` headings, always present and in this order; a defaulted axis reads `None.` or `Default.` under its own heading. Facts sit on `Label:` lines and nowhere else, and the prose under a heading explains them. The `Schema:` line above is the profile schema `ship-run` checks at preflight; only a `setup-skills` re-run moves it.
 
 <!-- setup-skills: fill every `Label:` line, replace each <...>, delete these comments. -->
 
@@ -107,6 +107,7 @@ Pinned: <libraries whose installed version matters, or None.>
 ## Cloud lane
 
 PR cap: <number, default 3, or none>
+Sandbox merge: <yes, or no; no is the default where the line is absent>
 Bootstrap: <path of a sandbox setup script, safe to rerun and on a workstation, or None.>
 
-<!-- The cloud bootstrap repairs the sandbox image; it runs at the start of every run in a cloud sandbox, attended or unattended, and of any `--unattended` run, local included, so it must be safe on a workstation. PR cap: is read by the unattended lane alone. -->
+<!-- The cloud bootstrap repairs the sandbox image; it runs at the start of every run in a cloud sandbox, attended or unattended, and of any `--unattended` run, local included, so it must be safe on a workstation. PR cap: is read by the unattended lane alone. Sandbox merge: is read by `merge`, which refuses with `cloud-sandbox` in a cloud sandbox (`CLAUDE_CODE_REMOTE=true`, attended or not) unless it says yes. -->
