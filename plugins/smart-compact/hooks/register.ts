@@ -89,7 +89,15 @@ export const register: Register = on => {
       }
     }
     pending = { instructions, resume }
-    return { result: 'Compaction queued. End your turn now with a one-line status.' }
+    // Holding the turn open until the compaction ends is not possible: the host's `result` is emitted before any
+    // turn.complete hook runs, even one that starts the compaction ahead of `next(e)` (measured on 2.1.288 and
+    // 2.1.332 with a probe that awaited $.command.run there). So a host that closes an idle session cuts a long
+    // compaction, and the queued resume with it (T3 Code closes 120 s after a result; 191 s measured at 265k tokens).
+    return {
+      result: headless
+        ? 'Compaction queued. End your turn now with a one-line status. This is a non-interactive session: a host that closes an idle session (T3 Code does after 120 s) can cut a compaction that runs longer, and the resume with it. If the work has not resumed after a few minutes, tell the owner instead of waiting.'
+        : 'Compaction queued. End your turn now with a one-line status.',
+    }
   })
 
   // Every main-loop tool result: how full the context is against the auto-compact point, not the model's window.
